@@ -1,3 +1,4 @@
+console.log("🔥 REGISTER ROUTE HIT");
 console.log("🔥 REAL BACKEND VERSION");
 console.log('🔥 AUTH ROUTES LOADED');
 
@@ -67,7 +68,7 @@ router.post(
 // ✅ REGISTER (DEBUG ENABLED)
 //
 router.post('/register', async (req, res) => {
-  console.log("REGISTER HIT:", req.body);
+  console.log("🔥 REGISTER ROUTE HIT");
 
   const { email, password, name, role } = req.body;
 
@@ -124,8 +125,7 @@ router.post('/register', async (req, res) => {
 
   return res.status(500).json({
     error: "REAL_ERROR",
-    message: error.message,
-    stack: error.stack
+    message: error.message
   });
 }
 });
