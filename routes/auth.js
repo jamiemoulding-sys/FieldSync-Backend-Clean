@@ -1,6 +1,4 @@
-console.log("🔥 REGISTER ROUTE HIT");
-console.log("🔥 REAL BACKEND VERSION");
-console.log('🔥 AUTH ROUTES LOADED');
+console.log("🔥 AUTH ROUTES LOADED");
 
 const express = require('express');
 const router = express.Router();
@@ -9,7 +7,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body } = require('express-validator');
 const { query } = require('../database/connection');
-const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 
 //
@@ -45,11 +42,7 @@ router.post(
       const token = jwt.sign(
         {
           id: user.id,
-          email: user.email,
-          role: user.role,
-          companyId: user.company_id,
-          trialEndsAt: user.trial_ends_at,
-          isPro: user.is_pro,
+          email: user.email
         },
         process.env.JWT_SECRET,
         { expiresIn: '7d' }
@@ -58,22 +51,21 @@ router.post(
       return res.json({ token });
 
     } catch (error) {
-      console.error('LOGIN ERROR:', error);
+      console.error('💥 LOGIN ERROR:', error);
       return res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+        error: error.message
+      });
     }
   }
 );
 
 //
-// ✅ REGISTER (DEBUG ENABLED)
+// ✅ REGISTER (SAFE VERSION)
 //
 router.post('/register', async (req, res) => {
   console.log("🔥 REGISTER ROUTE HIT");
 
-  const { email, password, name, role } = req.body;
+  const { email, password } = req.body;
 
   try {
     if (!email || !password) {
@@ -82,26 +74,13 @@ router.post('/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const companyId = uuidv4();
-
-    const trialEnds = new Date();
-    trialEnds.setDate(trialEnds.getDate() + 7);
-
     console.log("🚀 ABOUT TO INSERT");
 
     const result = await query(
-      `INSERT INTO users
-      (email, password, name, role, company_id, trial_ends_at, is_pro, is_active)
-      VALUES ($1, $2, $3, $4, $5, $6, false, true)
-      RETURNING *`,
-      [
-        email,
-        hashedPassword,
-        name || 'User',
-        role || 'user',
-        companyId,
-        trialEnds
-      ]
+      `INSERT INTO users (email, password)
+       VALUES ($1, $2)
+       RETURNING *`,
+      [email, hashedPassword]
     );
 
     console.log("✅ INSERT SUCCESS");
@@ -111,11 +90,7 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign(
       {
         id: user.id,
-        email: user.email,
-        role: user.role,
-        companyId: user.company_id,
-        trialEndsAt: user.trial_ends_at,
-        isPro: user.is_pro,
+        email: user.email
       },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
@@ -124,10 +99,12 @@ router.post('/register', async (req, res) => {
     return res.status(201).json({ token });
 
   } catch (error) {
-  console.error("💥 REAL ERROR:", error);
+    console.error("💥 REGISTER ERROR:", error);
 
-  return res.status(500).send(error.message);
-}
+    return res.status(500).json({
+      error: error.message
+    });
+  }
 });
 
 //
@@ -155,10 +132,7 @@ router.post('/apply-code', authenticateToken, async (req, res) => {
       {
         id: user.id,
         email: user.email,
-        role: user.role,
-        companyId: user.company_id,
-        trialEndsAt: user.trial_ends_at,
-        isPro: true,
+        isPro: true
       },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
@@ -167,10 +141,12 @@ router.post('/apply-code', authenticateToken, async (req, res) => {
     res.json({ token });
 
   } catch (error) {
-  console.error("💥 REAL ERROR:", error);
+    console.error("💥 APPLY CODE ERROR:", error);
 
-  return res.status(500).send(error.message);
-}
+    return res.status(500).json({
+      error: error.message
+    });
+  }
 });
 
 module.exports = router;
