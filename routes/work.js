@@ -111,7 +111,10 @@ router.post('/clock-in', authenticateToken, [
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+   res.status(500).json({
+  error: "REAL_ERROR",
+  message: err.message
+});
   }
 });
 
@@ -160,7 +163,10 @@ router.post('/clock-out', authenticateToken, [
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+   res.status(500).json({
+  error: "REAL_ERROR",
+  message: err.message
+});
   }
 });
 
@@ -186,7 +192,10 @@ router.get('/sessions', authenticateToken, (req, res) => {
       }
     );
   } catch {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -211,7 +220,10 @@ router.get('/active-session', authenticateToken, (req, res) => {
       }
     );
   } catch {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

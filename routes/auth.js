@@ -59,7 +59,10 @@ router.post(
 
     } catch (error) {
       console.error('LOGIN ERROR:', error);
-      return res.status(500).json({ error: 'Server error' });
+      return res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
     }
   }
 );
@@ -168,7 +171,10 @@ router.post('/apply-code', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('APPLY CODE ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

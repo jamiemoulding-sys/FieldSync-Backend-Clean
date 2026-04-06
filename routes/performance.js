@@ -55,7 +55,10 @@ router.get('/', authenticateToken, async (req, res) => {
 
   } catch (err) {
     console.error('PERFORMANCE ERROR:', err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: err.message
+});
   }
 });
 

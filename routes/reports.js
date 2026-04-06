@@ -20,7 +20,10 @@ router.get('/', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Reports error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -46,7 +49,10 @@ router.get('/timesheets', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Timesheet error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

@@ -34,7 +34,10 @@ router.get('/all', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Get tasks error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -55,7 +58,10 @@ router.post('/', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Create task error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -98,7 +104,10 @@ router.post('/complete', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Complete task error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -117,7 +126,10 @@ router.post('/', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Create task error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -159,7 +171,10 @@ router.post('/complete', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Complete task error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

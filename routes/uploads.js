@@ -18,7 +18,10 @@ router.get('/all', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Get uploads error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

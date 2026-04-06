@@ -83,7 +83,10 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('CLOCK IN ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -134,7 +137,10 @@ router.get('/active', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('ACTIVE ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -157,7 +163,10 @@ router.get('/active-all', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('ACTIVE ALL ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -180,7 +189,10 @@ router.get('/history', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('HISTORY ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -203,7 +215,10 @@ router.post('/update-location', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('LOCATION UPDATE ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -230,7 +245,10 @@ router.get('/analytics', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('ANALYTICS ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -254,7 +272,10 @@ router.get('/patterns', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('PATTERNS ERROR:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

@@ -104,7 +104,10 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
     res.json(dashboardData);
   } catch (error) {
     console.error('Dashboard error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

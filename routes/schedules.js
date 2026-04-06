@@ -19,7 +19,10 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('GET schedules error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -38,7 +41,10 @@ router.get('/my-schedule', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('MY schedule error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -58,7 +64,10 @@ router.post('/', authenticateToken, async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('CREATE schedule error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -80,7 +89,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('UPDATE schedule error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -97,7 +109,10 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     res.json({ message: 'Schedule deleted' });
   } catch (error) {
     console.error('DELETE schedule error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -118,7 +133,10 @@ router.get('/late-arrivals', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('LATE arrivals error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -140,7 +158,10 @@ router.post('/holiday-requests', authenticateToken, async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('CREATE holiday error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -157,7 +178,10 @@ router.get('/holiday-requests', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('GET holidays error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -176,7 +200,10 @@ router.put('/holiday-requests/:id', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('UPDATE holiday error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -187,7 +214,10 @@ router.delete('/holiday-requests/:id', authenticateToken, async (req, res) => {
     res.json({ message: 'Holiday deleted' });
   } catch (error) {
     console.error('DELETE holiday error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -206,7 +236,10 @@ router.get('/timesheet', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('TIMESHEET error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 

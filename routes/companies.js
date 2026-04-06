@@ -69,7 +69,10 @@ router.post('/create-company', async (req, res) => {
 
   } catch (error) {
     console.error('Create company error:', error);
-    return res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({
+  error: "REAL_ERROR",
+  message: error.message
+});
   }
 });
 
@@ -99,7 +102,10 @@ router.get('/me', async (req, res) => {
 
   } catch (err) {
     console.error('Get company error:', err);
-    res.status(500).json({ error: 'Server error' });
+   res.status(500).json({
+  error: "REAL_ERROR",
+  message: err.message
+});
   }
 });
 
