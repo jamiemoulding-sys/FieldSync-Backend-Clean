@@ -65,10 +65,14 @@ router.post(
 // ✅ REGISTER
 //
 router.post('/register', async (req, res) => {
-  console.log("REGISTER HIT:", req.body); // ✅ DEBUG (correct place)
+  console.log("REGISTER HIT:", req.body);
 
   try {
     const { email, password, name, role } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Missing email or password" });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -78,10 +82,18 @@ router.post('/register', async (req, res) => {
     trialEnds.setDate(trialEnds.getDate() + 7);
 
     const result = await query(
-      `INSERT INTO users (email, password, name, role, company_id, trial_ends_at, is_pro)
-       VALUES ($1, $2, $3, $4, $5, $6, false)
-       RETURNING *`,
-      [email, hashedPassword, name, role, companyId, trialEnds]
+      `INSERT INTO users 
+      (email, password, name, role, company_id, trial_ends_at, is_pro, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, false, true)
+      RETURNING *`,
+      [
+        email,
+        hashedPassword,
+        name || null,
+        role || 'user',
+        companyId,
+        trialEnds
+      ]
     );
 
     const user = result.rows[0];
@@ -100,9 +112,11 @@ router.post('/register', async (req, res) => {
     );
 
     return res.status(201).json({ token });
+
   } catch (error) {
-    console.error('REGISTER ERROR:', error);
-    return res.status(500).json({ error: error.message }); // ✅ show real error
+    console.error('REGISTER ERROR FULL:', error.message);
+    console.error(error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
