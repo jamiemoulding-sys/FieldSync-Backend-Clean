@@ -126,10 +126,7 @@ router.post('/register', async (req, res) => {
   } catch (error) {
   console.error("💥 REAL ERROR:", error);
 
-  return res.status(500).json({
-    error: "REAL_ERROR",
-    message: error.message
-  });
+  return res.status(500).send(error.message);
 }
 });
 
