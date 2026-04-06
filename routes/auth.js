@@ -63,7 +63,7 @@ router.post(
 );
 
 //
-// ✅ REGISTER
+// ✅ REGISTER (DEBUG ENABLED)
 //
 router.post('/register', async (req, res) => {
   console.log("REGISTER HIT:", req.body);
