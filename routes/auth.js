@@ -62,13 +62,15 @@ router.post(
 //
 // ✅ REGISTER (SAFE VERSION)
 //
-const result = await query(
-  `INSERT INTO users (email, password, name)
-   VALUES ($1, $2, $3)
-   RETURNING *`,
-  [email, hashedPassword, 'User']
-);
-  
+router.post('/register', async (req, res) => {
+  try {
+    const result = await query('SELECT NOW()');
+    return res.json({ ok: true, time: result.rows[0] });
+  } catch (err) {
+    console.error("DB TEST ERROR:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 //
 // ✅ APPLY ACCESS CODE
