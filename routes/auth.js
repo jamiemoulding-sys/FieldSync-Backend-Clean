@@ -20,6 +20,8 @@ router.post(
   ],
   async (req, res) => {
     try {
+      console.log("🔥 LOGIN HIT");
+
       const { email, password } = req.body;
 
       const result = await query(
@@ -52,23 +54,37 @@ router.post(
 
     } catch (error) {
       console.error('💥 LOGIN ERROR:', error);
+
       return res.status(500).json({
-        error: error.message
+        error: error.message,
+        stack: error.stack
       });
     }
   }
 );
 
 //
-// ✅ REGISTER (SAFE VERSION)
+// ✅ REGISTER (DB CONNECTION TEST — FINAL DEBUG)
 //
 router.post('/register', async (req, res) => {
+  console.log("🔥 REGISTER HIT");
+
   try {
     const result = await query('SELECT NOW()');
-    return res.json({ ok: true, time: result.rows[0] });
-  } catch (err) {
-    console.error("DB TEST ERROR:", err);
-    return res.status(500).json({ error: err.message });
+
+    return res.json({
+      success: true,
+      dbTime: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error("💥 REGISTER ERROR:", error);
+
+    return res.status(500).json({
+      error: error.message,
+      code: error.code,
+      detail: error.detail
+    });
   }
 });
 
@@ -77,6 +93,8 @@ router.post('/register', async (req, res) => {
 //
 router.post('/apply-code', authenticateToken, async (req, res) => {
   try {
+    console.log("🔥 APPLY CODE HIT");
+
     const { code } = req.body;
 
     if (code !== 'FULLACCESS2026') {
