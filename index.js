@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
-// ✅ CORRECT ROUTES (NO /src)
+// ROUTES
 const authRoutes = require('./routes/auth');
 const shiftRoutes = require('./routes/shifts');
 const taskRoutes = require('./routes/tasks');
@@ -21,7 +21,6 @@ const billingRoutes = require('./routes/billing');
 const performanceRoutes = require('./routes/performance');
 
 const { authenticateToken } = require('./middleware/auth');
-const { initDatabase } = require('./database/init');
 const { query } = require('./database/connection');
 
 const app = express();
@@ -83,10 +82,10 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
 
   } catch (err) {
     console.error('Dashboard error:', err);
-   res.status(500).json({
-  error: "REAL_ERROR",
-  message: err.message
-});
+    res.status(500).json({
+      error: "REAL_ERROR",
+      message: err.message
+    });
   }
 });
 
@@ -97,11 +96,3 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
-// =====================
-// DB INIT
-// =====================
-
-initDatabase()
-  .then(() => console.log('✅ Database initialized'))
-  .catch(err => console.error('DB INIT ERROR:', err));
