@@ -10,7 +10,7 @@ const { query } = require('../database/connection');
 const { authenticateToken } = require('../middleware/auth');
 
 //
-// ✅ LOGIN
+// ✅ LOGIN (FULL DEBUG)
 //
 router.post(
   '/login',
@@ -21,25 +21,38 @@ router.post(
   async (req, res) => {
     try {
       console.log("🔥 LOGIN HIT");
+      console.log("📩 LOGIN BODY:", req.body);
 
       const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({
+          error: "Missing email or password",
+          bodyReceived: req.body
+        });
+      }
 
       const result = await query(
         'SELECT * FROM users WHERE email = $1',
         [email]
       );
 
+      console.log("👤 DB RESULT:", result.rows);
+
       const user = result?.rows?.[0];
 
       if (!user) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(401).json({ error: 'User not found' });
       }
 
       const validPassword = await bcrypt.compare(password, user.password);
 
       if (!validPassword) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(401).json({ error: 'Invalid password' });
       }
+
+      // 🔥 CRITICAL DEBUG
+      console.log("🔐 JWT SECRET EXISTS:", !!process.env.JWT_SECRET);
 
       const token = jwt.sign(
         {
@@ -50,7 +63,15 @@ router.post(
         { expiresIn: '7d' }
       );
 
-      return res.json({ token });
+      console.log("✅ TOKEN CREATED:", token);
+
+      return res.json({ 
+        token,
+        debug: {
+          userId: user.id,
+          email: user.email
+        }
+      });
 
     } catch (error) {
       console.error('💥 LOGIN ERROR:', error);
@@ -64,16 +85,15 @@ router.post(
 );
 
 //
-// ✅ REGISTER (DB CONNECTION TEST — FINAL DEBUG)
+// ✅ REGISTER
 //
 router.post('/register', async (req, res) => {
   console.log("🔥 REGISTER HIT");
-  console.log("BODY:", req.body);
+  console.log("📩 REGISTER BODY:", req.body);
 
   try {
     const { email, password, name } = req.body;
 
-    // 🚨 HARD VALIDATION (PREVENT CRASH)
     if (!email || !password) {
       return res.status(400).json({
         error: "Email and password are required",
@@ -95,6 +115,12 @@ router.post('/register', async (req, res) => {
   } catch (error) {
     console.error("💥 REGISTER ERROR:", error);
 
+    if (error.code === '23505') {
+      return res.status(400).json({
+        error: "Email already exists"
+      });
+    }
+
     res.status(500).json({
       error: error.message,
       code: error.code,
@@ -109,6 +135,7 @@ router.post('/register', async (req, res) => {
 router.post('/apply-code', authenticateToken, async (req, res) => {
   try {
     console.log("🔥 APPLY CODE HIT");
+    console.log("👤 USER FROM TOKEN:", req.user);
 
     const { code } = req.body;
 
