@@ -18,9 +18,17 @@ const authenticateToken = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    req.user = decoded;
+    console.log("✅ DECODED TOKEN:", decoded);
+
+    // ✅ FORCE STRUCTURE (VERY IMPORTANT)
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      companyId: decoded.companyId || null
+    };
 
     next();
+
   } catch (err) {
     console.error("💥 JWT ERROR:", err.message);
 
