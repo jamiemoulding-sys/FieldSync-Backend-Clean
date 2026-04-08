@@ -6,18 +6,23 @@ const { getDistanceInMeters } = require('../utils/distance');
 
 //
 // =======================
-// ✅ CLOCK IN
+// ✅ CLOCK IN (COMPANY SAFE 🔥)
 // =======================
 //
 router.post('/clock-in', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
+    const companyId = req.user.companyId;
     const { location_id, latitude, longitude } = req.body;
 
-    // 🔹 Get location
+    if (!companyId) {
+      return res.status(403).json({ error: "No company assigned" });
+    }
+
+    // 🔹 Get location (scoped)
     const locationRes = await query(
-      'SELECT * FROM locations WHERE id = $1',
-      [location_id]
+      'SELECT * FROM locations WHERE id = $1 AND company_id = $2',
+      [location_id, companyId]
     );
 
     const location = locationRes.rows[0];
@@ -43,21 +48,25 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
     // 🔹 Prevent duplicate shift
     const existing = await query(`
       SELECT * FROM shifts
-      WHERE user_id = $1 AND clock_out_time IS NULL
-    `, [userId]);
+      WHERE user_id = $1 
+      AND company_id = $2
+      AND clock_out_time IS NULL
+    `, [userId, companyId]);
 
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: 'Already clocked in' });
     }
 
-    // 🔥 Check schedule (for lateness)
+    // 🔥 Check schedule (scoped)
     const today = new Date().toISOString().split('T')[0];
 
     const scheduleRes = await query(`
       SELECT * FROM schedules
-      WHERE user_id = $1 AND date = $2
+      WHERE user_id = $1 
+      AND company_id = $2
+      AND date = $3
       LIMIT 1
-    `, [userId, today]);
+    `, [userId, companyId, today]);
 
     const schedule = scheduleRes.rows[0];
     const now = new Date();
@@ -68,12 +77,12 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       isLate = true;
     }
 
-    // 🔹 Create shift
+    // 🔹 Create shift (WITH company_id 🔥)
     const result = await query(`
-      INSERT INTO shifts (user_id, location_id, latitude, longitude, clock_in_time, is_late)
-      VALUES ($1, $2, $3, $4, NOW(), $5)
+      INSERT INTO shifts (user_id, location_id, latitude, longitude, clock_in_time, is_late, company_id)
+      VALUES ($1, $2, $3, $4, NOW(), $5, $6)
       RETURNING *
-    `, [userId, location_id, latitude, longitude, isLate]);
+    `, [userId, location_id, latitude, longitude, isLate, companyId]);
 
     res.json({
       message: isLate ? 'Clocked in (late)' : 'Clocked in!',
@@ -84,27 +93,30 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('CLOCK IN ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
 //
 // =======================
-// ✅ CLOCK OUT
+// ✅ CLOCK OUT (SAFE)
 // =======================
 //
 router.post('/clock-out', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
+    const companyId = req.user.companyId;
 
     const result = await query(`
       UPDATE shifts
       SET clock_out_time = NOW()
-      WHERE user_id = $1 AND clock_out_time IS NULL
+      WHERE user_id = $1 
+      AND company_id = $2
+      AND clock_out_time IS NULL
       RETURNING *
-    `, [userId]);
+    `, [userId, companyId]);
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'No active shift found' });
@@ -120,7 +132,7 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
 
 //
 // =======================
-// 👤 ACTIVE SHIFT (USER)
+// 👤 ACTIVE SHIFT
 // =======================
 //
 router.get('/active', authenticateToken, async (req, res) => {
@@ -128,25 +140,27 @@ router.get('/active', authenticateToken, async (req, res) => {
     const result = await query(`
       SELECT *
       FROM shifts
-      WHERE user_id = $1 AND clock_out_time IS NULL
+      WHERE user_id = $1 
+      AND company_id = $2
+      AND clock_out_time IS NULL
       ORDER BY clock_in_time DESC
       LIMIT 1
-    `, [req.user.id]);
+    `, [req.user.id, req.user.companyId]);
 
     res.json(result.rows[0] || null);
 
   } catch (error) {
     console.error('ACTIVE ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
 //
 // =======================
-// 👥 ACTIVE SHIFTS (ALL)
+// 👥 ACTIVE SHIFTS (COMPANY ONLY 🔥)
 // =======================
 //
 router.get('/active-all', authenticateToken, async (req, res) => {
@@ -155,24 +169,25 @@ router.get('/active-all', authenticateToken, async (req, res) => {
       SELECT s.*, u.name
       FROM shifts s
       JOIN users u ON s.user_id = u.id
-      WHERE s.clock_out_time IS NULL
+      WHERE s.company_id = $1
+      AND s.clock_out_time IS NULL
       ORDER BY s.clock_in_time DESC
-    `);
+    `, [req.user.companyId]);
 
     res.json(result.rows);
 
   } catch (error) {
     console.error('ACTIVE ALL ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
 //
 // =======================
-// 📜 HISTORY
+// 📜 HISTORY (SAFE)
 // =======================
 //
 router.get('/history', authenticateToken, async (req, res) => {
@@ -180,25 +195,26 @@ router.get('/history', authenticateToken, async (req, res) => {
     const result = await query(`
       SELECT *
       FROM shifts
-      WHERE user_id = $1
+      WHERE user_id = $1 
+      AND company_id = $2
       ORDER BY clock_in_time DESC
       LIMIT 20
-    `, [req.user.id]);
+    `, [req.user.id, req.user.companyId]);
 
     res.json(result.rows);
 
   } catch (error) {
     console.error('HISTORY ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
 //
 // =======================
-// 📍 UPDATE LOCATION
+// 📍 UPDATE LOCATION (SAFE)
 // =======================
 //
 router.post('/update-location', authenticateToken, async (req, res) => {
@@ -208,23 +224,25 @@ router.post('/update-location', authenticateToken, async (req, res) => {
     await query(`
       UPDATE shifts
       SET latitude = $1, longitude = $2
-      WHERE user_id = $3 AND clock_out_time IS NULL
-    `, [latitude, longitude, req.user.id]);
+      WHERE user_id = $3 
+      AND company_id = $4
+      AND clock_out_time IS NULL
+    `, [latitude, longitude, req.user.id, req.user.companyId]);
 
     res.json({ success: true });
 
   } catch (error) {
     console.error('LOCATION UPDATE ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
 //
 // =======================
-// 📊 ANALYTICS (HOURS)
+// 📊 ANALYTICS (SAFE 🔥)
 // =======================
 //
 router.get('/analytics', authenticateToken, async (req, res) => {
@@ -236,46 +254,48 @@ router.get('/analytics', authenticateToken, async (req, res) => {
           EXTRACT(EPOCH FROM (COALESCE(clock_out_time, NOW()) - clock_in_time)) / 3600
         ) as hours
       FROM shifts
-      WHERE clock_in_time >= NOW() - INTERVAL '7 days'
+      WHERE company_id = $1
+      AND clock_in_time >= NOW() - INTERVAL '7 days'
       GROUP BY DATE(clock_in_time)
       ORDER BY DATE(clock_in_time)
-    `);
+    `, [req.user.companyId]);
 
     res.json(result.rows);
 
   } catch (error) {
     console.error('ANALYTICS ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
 //
 // =======================
-// 🚨 LATE + EARLY STATS
+// 🚨 PATTERNS (SAFE 🔥)
 // =======================
 //
 router.get('/patterns', authenticateToken, async (req, res) => {
   try {
     const result = await query(`
-      SELECT 
+      SELECT
         user_id,
         COUNT(*) FILTER (WHERE is_late = true) as late_count,
         COUNT(*) as total_shifts
       FROM shifts
+      WHERE company_id = $1
       GROUP BY user_id
-    `);
+    `, [req.user.companyId]);
 
     res.json(result.rows);
 
   } catch (error) {
     console.error('PATTERNS ERROR:', error);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: error.message
-});
+      error: "REAL_ERROR",
+      message: error.message
+    });
   }
 });
 
