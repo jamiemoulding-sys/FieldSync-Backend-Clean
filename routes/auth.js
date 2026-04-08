@@ -67,8 +67,19 @@ router.post(
 // ✅ REGISTER (DB CONNECTION TEST — FINAL DEBUG)
 //
 router.post('/register', async (req, res) => {
+  console.log("🔥 REGISTER HIT");
+  console.log("BODY:", req.body);
+
   try {
     const { email, password, name } = req.body;
+
+    // 🚨 HARD VALIDATION (PREVENT CRASH)
+    if (!email || !password) {
+      return res.status(400).json({
+        error: "Email and password are required",
+        bodyReceived: req.body
+      });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -76,7 +87,7 @@ router.post('/register', async (req, res) => {
       `INSERT INTO users (email, password, name)
        VALUES ($1, $2, $3)
        RETURNING id, email`,
-      [email, hashedPassword, name]
+      [email, hashedPassword, name || null]
     );
 
     res.json({ user: result.rows[0] });
@@ -86,7 +97,8 @@ router.post('/register', async (req, res) => {
 
     res.status(500).json({
       error: error.message,
-      code: error.code
+      code: error.code,
+      bodyReceived: req.body
     });
   }
 });
