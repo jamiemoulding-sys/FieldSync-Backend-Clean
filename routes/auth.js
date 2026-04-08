@@ -67,23 +67,25 @@ router.post(
 // ✅ REGISTER (DB CONNECTION TEST — FINAL DEBUG)
 //
 router.post('/register', async (req, res) => {
-  console.log("🔥 REGISTER HIT");
-
   try {
-    const result = await query('SELECT NOW()');
+    const { email, password } = req.body;
 
-    return res.json({
-      success: true,
-      dbTime: result.rows[0]
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const result = await query(
+      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+      [email, hashedPassword]
+    );
+
+    res.json({
+      user: result.rows[0]
     });
 
   } catch (error) {
     console.error("💥 REGISTER ERROR:", error);
 
-    return res.status(500).json({
-      error: error.message,
-      code: error.code,
-      detail: error.detail
+    res.status(500).json({
+      error: error.message
     });
   }
 });
