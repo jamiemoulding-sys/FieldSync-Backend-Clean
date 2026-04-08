@@ -68,16 +68,28 @@ app.get('/api/health', (req, res) => {
 // DASHBOARD
 // =====================
 
+// =====================
+// DASHBOARD (COMPANY SAFE 🔥)
+// =====================
+
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
   try {
-    const [tasks, shifts] = await Promise.all([
-      query(`SELECT COUNT(*) FROM tasks`),
-      query(`SELECT COUNT(*) FROM shifts WHERE clock_out_time IS NULL`)
+    const companyId = req.user.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({ error: "No company assigned" });
+    }
+
+    const [tasks, shifts, users] = await Promise.all([
+      query(`SELECT COUNT(*) FROM tasks WHERE company_id = $1`, [companyId]),
+      query(`SELECT COUNT(*) FROM shifts WHERE company_id = $1 AND clock_out_time IS NULL`, [companyId]),
+      query(`SELECT COUNT(*) FROM users WHERE company_id = $1`, [companyId])
     ]);
 
     res.json({
       tasks: parseInt(tasks.rows[0].count),
-      activeShifts: parseInt(shifts.rows[0].count)
+      activeShifts: parseInt(shifts.rows[0].count),
+      users: parseInt(users.rows[0].count)
     });
 
   } catch (err) {
