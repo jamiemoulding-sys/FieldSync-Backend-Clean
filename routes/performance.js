@@ -5,8 +5,14 @@ const { authenticateToken } = require('../middleware/auth');
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const companyId = req.user.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({ error: "No company assigned" });
+    }
+
     const result = await query(`
-      SELECT 
+      SELECT
         u.id,
         u.name,
 
@@ -25,14 +31,21 @@ router.get('/', authenticateToken, async (req, res) => {
         ), 0) as total_hours
 
       FROM users u
-      LEFT JOIN schedules sch ON sch.user_id = u.id
-      LEFT JOIN shifts s 
-        ON s.user_id = u.id 
+
+      LEFT JOIN schedules sch 
+        ON sch.user_id = u.id
+        AND sch.company_id = $1
+
+      LEFT JOIN shifts s
+        ON s.user_id = u.id
+        AND s.company_id = $1
         AND DATE(s.clock_in_time) = sch.date
+
+      WHERE u.company_id = $1
 
       GROUP BY u.id, u.name
       ORDER BY u.name ASC
-    `);
+    `, [companyId]);
 
     const data = result.rows.map(u => {
       const latenessRate = u.total_shifts > 0
@@ -56,9 +69,9 @@ router.get('/', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('PERFORMANCE ERROR:', err);
     res.status(500).json({
-  error: "REAL_ERROR",
-  message: err.message
-});
+      error: "REAL_ERROR",
+      message: err.message
+    });
   }
 });
 
