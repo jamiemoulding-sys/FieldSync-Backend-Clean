@@ -68,24 +68,25 @@ router.post(
 //
 router.post('/register', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, name } = req.body;
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await query(
-      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
-      [email, hashedPassword]
+      `INSERT INTO users (email, password, name)
+       VALUES ($1, $2, $3)
+       RETURNING id, email`,
+      [email, hashedPassword, name]
     );
 
-    res.json({
-      user: result.rows[0]
-    });
+    res.json({ user: result.rows[0] });
 
   } catch (error) {
     console.error("💥 REGISTER ERROR:", error);
 
     res.status(500).json({
-      error: error.message
+      error: error.message,
+      code: error.code
     });
   }
 });
