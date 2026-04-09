@@ -9,6 +9,7 @@ const {
 
 const { query } = require('../database/connection');
 
+//
 // =======================
 // 📅 GET ALL SCHEDULES (COMPANY SAFE)
 // =======================
@@ -22,16 +23,17 @@ router.get('/', authenticateToken, requireCompany, async (req, res) => {
       ORDER BY s.date DESC
     `, [req.user.companyId]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (error) {
     console.error('GET schedules error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
   }
 });
 
+//
 // =======================
 // 👤 MY SCHEDULE
 // =======================
@@ -44,18 +46,19 @@ router.get('/my-schedule', authenticateToken, requireCompany, async (req, res) =
       ORDER BY date DESC
     `, [req.user.id]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (error) {
     console.error('MY schedule error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
   }
 });
 
+//
 // =======================
-// ➕ CREATE SCHEDULE (ADMIN / MANAGER)
+// ➕ CREATE SCHEDULE
 // =======================
 router.post('/',
   authenticateToken,
@@ -65,14 +68,22 @@ router.post('/',
     try {
       const { user_id, date, start_time, end_time } = req.body;
 
-      // 🔥 ENSURE USER BELONGS TO SAME COMPANY
+      if (!user_id || !date || !start_time || !end_time) {
+        return res.status(400).json({
+          error: "All fields required"
+        });
+      }
+
+      // 🔒 validate user belongs to company
       const userCheck = await query(
         `SELECT id FROM users WHERE id = $1 AND company_id = $2`,
         [user_id, req.user.companyId]
       );
 
       if (userCheck.rows.length === 0) {
-        return res.status(403).json({ error: 'Invalid user for this company' });
+        return res.status(403).json({
+          error: 'Invalid user for this company'
+        });
       }
 
       const result = await query(`
@@ -81,10 +92,11 @@ router.post('/',
         RETURNING *
       `, [user_id, date, start_time, end_time]);
 
-      res.status(201).json(result.rows[0]);
+      return res.status(201).json(result.rows[0]);
+
     } catch (error) {
       console.error('CREATE schedule error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         error: "REAL_ERROR",
         message: error.message
       });
@@ -92,8 +104,9 @@ router.post('/',
   }
 );
 
+//
 // =======================
-// ✏️ UPDATE SCHEDULE (ADMIN / MANAGER)
+// ✏️ UPDATE SCHEDULE
 // =======================
 router.put('/:id',
   authenticateToken,
@@ -103,6 +116,20 @@ router.put('/:id',
     try {
       const { start_time, end_time } = req.body;
 
+      // 🔒 ensure schedule belongs to company
+      const check = await query(`
+        SELECT s.id
+        FROM schedules s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = $1 AND u.company_id = $2
+      `, [req.params.id, req.user.companyId]);
+
+      if (check.rows.length === 0) {
+        return res.status(403).json({
+          error: "Schedule not found"
+        });
+      }
+
       const result = await query(`
         UPDATE schedules
         SET start_time = $1,
@@ -111,10 +138,11 @@ router.put('/:id',
         RETURNING *
       `, [start_time, end_time, req.params.id]);
 
-      res.json(result.rows[0]);
+      return res.json(result.rows[0]);
+
     } catch (error) {
       console.error('UPDATE schedule error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         error: "REAL_ERROR",
         message: error.message
       });
@@ -122,8 +150,9 @@ router.put('/:id',
   }
 );
 
+//
 // =======================
-// ❌ DELETE SCHEDULE (ADMIN ONLY)
+// ❌ DELETE SCHEDULE
 // =======================
 router.delete('/:id',
   authenticateToken,
@@ -131,15 +160,26 @@ router.delete('/:id',
   requireRole('admin'),
   async (req, res) => {
     try {
-      await query(`
-        DELETE FROM schedules
-        WHERE id = $1
-      `, [req.params.id]);
+      const check = await query(`
+        SELECT s.id
+        FROM schedules s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = $1 AND u.company_id = $2
+      `, [req.params.id, req.user.companyId]);
 
-      res.json({ message: 'Schedule deleted' });
+      if (check.rows.length === 0) {
+        return res.status(403).json({
+          error: "Schedule not found"
+        });
+      }
+
+      await query(`DELETE FROM schedules WHERE id = $1`, [req.params.id]);
+
+      return res.json({ message: 'Schedule deleted' });
+
     } catch (error) {
       console.error('DELETE schedule error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         error: "REAL_ERROR",
         message: error.message
       });
@@ -147,8 +187,9 @@ router.delete('/:id',
   }
 );
 
+//
 // =======================
-// 🚨 LATE ARRIVALS (COMPANY SAFE)
+// 🚨 LATE ARRIVALS
 // =======================
 router.get('/late-arrivals', authenticateToken, requireCompany, async (req, res) => {
   try {
@@ -162,16 +203,18 @@ router.get('/late-arrivals', authenticateToken, requireCompany, async (req, res)
       AND sh.clock_in_time > s.start_time
     `, [req.user.companyId]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
+
   } catch (error) {
     console.error('LATE arrivals error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
   }
 });
 
+//
 // =======================
 // 📅 HOLIDAY REQUESTS
 // =======================
@@ -181,23 +224,30 @@ router.post('/holiday-requests', authenticateToken, requireCompany, async (req, 
   try {
     const { start_date, end_date } = req.body;
 
+    if (!start_date || !end_date) {
+      return res.status(400).json({
+        error: "Dates required"
+      });
+    }
+
     const result = await query(`
       INSERT INTO holidays (user_id, start_date, end_date)
       VALUES ($1, $2, $3)
       RETURNING *
     `, [req.user.id, start_date, end_date]);
 
-    res.status(201).json(result.rows[0]);
+    return res.status(201).json(result.rows[0]);
+
   } catch (error) {
     console.error('CREATE holiday error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
   }
 });
 
-// GET ALL (NOT JUST PENDING NOW 🔥)
+// GET ALL
 router.get('/holiday-requests', authenticateToken, requireCompany, async (req, res) => {
   try {
     const result = await query(`
@@ -208,17 +258,18 @@ router.get('/holiday-requests', authenticateToken, requireCompany, async (req, r
       ORDER BY h.start_date DESC
     `, [req.user.companyId]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
+
   } catch (error) {
     console.error('GET holidays error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
   }
 });
 
-// APPROVE / REJECT (ADMIN / MANAGER)
+// APPROVE / REJECT
 router.put('/holiday-requests/:id',
   authenticateToken,
   requireCompany,
@@ -227,6 +278,25 @@ router.put('/holiday-requests/:id',
     try {
       const { status } = req.body;
 
+      if (!['approved', 'rejected', 'pending'].includes(status)) {
+        return res.status(400).json({
+          error: "Invalid status"
+        });
+      }
+
+      const check = await query(`
+        SELECT h.id
+        FROM holidays h
+        JOIN users u ON u.id = h.user_id
+        WHERE h.id = $1 AND u.company_id = $2
+      `, [req.params.id, req.user.companyId]);
+
+      if (check.rows.length === 0) {
+        return res.status(403).json({
+          error: "Holiday not found"
+        });
+      }
+
       const result = await query(`
         UPDATE holidays
         SET status = $1
@@ -234,10 +304,11 @@ router.put('/holiday-requests/:id',
         RETURNING *
       `, [status, req.params.id]);
 
-      res.json(result.rows[0]);
+      return res.json(result.rows[0]);
+
     } catch (error) {
       console.error('UPDATE holiday error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         error: "REAL_ERROR",
         message: error.message
       });
@@ -251,11 +322,26 @@ router.delete('/holiday-requests/:id',
   requireCompany,
   async (req, res) => {
     try {
+      const check = await query(`
+        SELECT h.id
+        FROM holidays h
+        JOIN users u ON u.id = h.user_id
+        WHERE h.id = $1 AND u.company_id = $2
+      `, [req.params.id, req.user.companyId]);
+
+      if (check.rows.length === 0) {
+        return res.status(403).json({
+          error: "Holiday not found"
+        });
+      }
+
       await query(`DELETE FROM holidays WHERE id = $1`, [req.params.id]);
-      res.json({ message: 'Holiday deleted' });
+
+      return res.json({ message: 'Holiday deleted' });
+
     } catch (error) {
       console.error('DELETE holiday error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         error: "REAL_ERROR",
         message: error.message
       });
@@ -263,6 +349,7 @@ router.delete('/holiday-requests/:id',
   }
 );
 
+//
 // =======================
 // 📊 TIMESHEET
 // =======================
@@ -275,10 +362,11 @@ router.get('/timesheet', authenticateToken, requireCompany, async (req, res) => 
       ORDER BY clock_in_time DESC
     `, [req.user.id]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
+
   } catch (error) {
     console.error('TIMESHEET error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });

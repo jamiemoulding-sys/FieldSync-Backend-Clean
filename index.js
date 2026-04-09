@@ -19,26 +19,30 @@ const invitesRoutes = require('./routes/invites');
 const reportRoutes = require('./routes/reports');
 const billingRoutes = require('./routes/billing');
 const performanceRoutes = require('./routes/performance');
-
-const { authenticateToken } = require('./middleware/auth');
-const { query } = require('./database/connection');
+const dashboardRoutes = require('./routes/dashboard'); // 🔥 NEW
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =====================
-// MIDDLEWARE
+// 🔐 MIDDLEWARE
 // =====================
 
+// Stripe webhook (must be raw BEFORE json)
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
-app.use(cors());
+// ✅ CORS (production safe)
+app.use(cors({
+  origin: '*', // change to frontend URL later
+  credentials: true
+}));
+
 app.use(express.json());
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // =====================
-// ROUTES
+// 🚀 ROUTES
 // =====================
 
 app.use('/api/auth', authRoutes);
@@ -56,53 +60,35 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/performance', performanceRoutes);
 
+// 🔥 ENTERPRISE DASHBOARD ROUTE
+app.use('/api/dashboard', dashboardRoutes);
+
 // =====================
-// HEALTH CHECK
+// ❤️ HEALTH CHECK
 // =====================
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', time: new Date() });
+  res.json({
+    status: 'OK',
+    time: new Date()
+  });
 });
 
 // =====================
-// DASHBOARD
+// ❌ GLOBAL ERROR HANDLER
 // =====================
 
-// =====================
-// DASHBOARD (COMPANY SAFE 🔥)
-// =====================
+app.use((err, req, res, next) => {
+  console.error('💥 GLOBAL ERROR:', err.stack);
 
-app.get('/api/dashboard', authenticateToken, async (req, res) => {
-  try {
-    const companyId = req.user.companyId;
-
-    if (!companyId) {
-      return res.status(403).json({ error: "No company assigned" });
-    }
-
-    const [tasks, shifts, users] = await Promise.all([
-      query(`SELECT COUNT(*) FROM tasks WHERE company_id = $1`, [companyId]),
-      query(`SELECT COUNT(*) FROM shifts WHERE company_id = $1 AND clock_out_time IS NULL`, [companyId]),
-      query(`SELECT COUNT(*) FROM users WHERE company_id = $1`, [companyId])
-    ]);
-
-    res.json({
-      tasks: parseInt(tasks.rows[0].count),
-      activeShifts: parseInt(shifts.rows[0].count),
-      users: parseInt(users.rows[0].count)
-    });
-
-  } catch (err) {
-    console.error('Dashboard error:', err);
-    res.status(500).json({
-      error: "REAL_ERROR",
-      message: err.message
-    });
-  }
+  res.status(500).json({
+    error: 'Something went wrong',
+    message: err.message
+  });
 });
 
 // =====================
-// START SERVER
+// 🚀 START SERVER
 // =====================
 
 app.listen(PORT, () => {

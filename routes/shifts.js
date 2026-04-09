@@ -6,7 +6,7 @@ const { getDistanceInMeters } = require('../utils/distance');
 
 //
 // =======================
-// 🔥 ACTIVITY LOGGER
+// 🔥 ACTIVITY LOGGER (SAFE)
 // =======================
 const logActivity = async (userId, companyId, action, metadata = {}) => {
   try {
@@ -15,7 +15,7 @@ const logActivity = async (userId, companyId, action, metadata = {}) => {
       VALUES ($1, $2, $3, $4)
     `, [userId, companyId, action, JSON.stringify(metadata)]);
   } catch (err) {
-    console.error("Activity log failed:", err.message);
+    console.error("❌ Activity log failed:", err.message);
   }
 };
 
@@ -33,6 +33,7 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "No company assigned" });
     }
 
+    // 🔹 Validate location
     const locationRes = await query(
       'SELECT * FROM locations WHERE id = $1 AND company_id = $2',
       [location_id, companyId]
@@ -44,6 +45,7 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Location not found' });
     }
 
+    // 🔹 Distance check
     const distance = getDistanceInMeters(
       latitude,
       longitude,
@@ -57,8 +59,9 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       });
     }
 
+    // 🔹 Prevent duplicate shift
     const existing = await query(`
-      SELECT * FROM shifts
+      SELECT id FROM shifts
       WHERE user_id = $1
       AND company_id = $2
       AND clock_out_time IS NULL
@@ -68,6 +71,7 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Already clocked in' });
     }
 
+    // 🔹 Check schedule
     const today = new Date().toISOString().split('T')[0];
 
     const scheduleRes = await query(`
@@ -81,32 +85,38 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
     const schedule = scheduleRes.rows[0];
     const now = new Date();
 
-    let isLate = false;
+    const isLate = schedule && new Date(schedule.start_time) < now;
 
-    if (schedule && new Date(schedule.start_time) < now) {
-      isLate = true;
-    }
-
+    // 🔹 Insert shift
     const result = await query(`
-      INSERT INTO shifts (user_id, location_id, latitude, longitude, clock_in_time, is_late, company_id)
+      INSERT INTO shifts (
+        user_id,
+        location_id,
+        latitude,
+        longitude,
+        clock_in_time,
+        is_late,
+        company_id
+      )
       VALUES ($1, $2, $3, $4, NOW(), $5, $6)
       RETURNING *
     `, [userId, location_id, latitude, longitude, isLate, companyId]);
 
     // 🔥 LOG ACTIVITY
     await logActivity(userId, companyId, 'clock_in', {
-      isLate
+      isLate,
+      location_id
     });
 
-    res.json({
-      message: isLate ? 'Clocked in (late)' : 'Clocked in!',
+    return res.json({
+      message: isLate ? 'Clocked in (late)' : 'Clocked in',
       shift: result.rows[0],
       isLate
     });
 
   } catch (error) {
     console.error('CLOCK IN ERROR:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
@@ -138,11 +148,16 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
     // 🔥 LOG ACTIVITY
     await logActivity(userId, companyId, 'clock_out');
 
-    res.json({ success: true, shift: result.rows[0] });
+    return res.json({
+      success: true,
+      shift: result.rows[0]
+    });
 
   } catch (err) {
     console.error('CLOCK OUT ERROR:', err);
-    res.status(500).json({ error: 'Clock out failed' });
+    return res.status(500).json({
+      error: 'Clock out failed'
+    });
   }
 });
 
@@ -162,11 +177,11 @@ router.get('/active', authenticateToken, async (req, res) => {
       LIMIT 1
     `, [req.user.id, req.user.companyId]);
 
-    res.json(result.rows[0] || null);
+    return res.json(result.rows[0] || null);
 
   } catch (error) {
     console.error('ACTIVE ERROR:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
@@ -188,11 +203,11 @@ router.get('/active-all', authenticateToken, async (req, res) => {
       ORDER BY s.clock_in_time DESC
     `, [req.user.companyId]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
 
   } catch (error) {
     console.error('ACTIVE ALL ERROR:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
@@ -214,11 +229,11 @@ router.get('/history', authenticateToken, async (req, res) => {
       LIMIT 20
     `, [req.user.id, req.user.companyId]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
 
   } catch (error) {
     console.error('HISTORY ERROR:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
@@ -244,11 +259,11 @@ router.get('/analytics', authenticateToken, async (req, res) => {
       ORDER BY DATE(clock_in_time)
     `, [req.user.companyId]);
 
-    res.json(result.rows);
+    return res.json(result.rows);
 
   } catch (error) {
     console.error('ANALYTICS ERROR:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "REAL_ERROR",
       message: error.message
     });
