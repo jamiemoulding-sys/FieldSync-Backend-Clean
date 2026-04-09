@@ -1,9 +1,10 @@
 const jwt = require('jsonwebtoken');
 
+// =======================
+// 🔐 AUTH MIDDLEWARE
+// =======================
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-
-  console.log("🔐 AUTH HEADER:", authHeader);
 
   if (!authHeader) {
     return res.status(401).json({ error: "No token provided" });
@@ -18,13 +19,12 @@ const authenticateToken = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    console.log("✅ DECODED TOKEN:", decoded);
-
-    // ✅ FORCE STRUCTURE (VERY IMPORTANT)
+    // ✅ FORCE STRUCTURE (EXPANDED)
     req.user = {
       id: decoded.id,
       email: decoded.email,
-      companyId: decoded.companyId || null
+      companyId: decoded.companyId || null,
+      role: decoded.role || 'employee' // 🔥 NEW
     };
 
     next();
@@ -39,4 +39,41 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-module.exports = { authenticateToken };
+// =======================
+// 👑 ROLE CHECK MIDDLEWARE
+// =======================
+const requireRole = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: "Forbidden",
+        message: "You do not have permission to perform this action"
+      });
+    }
+
+    next();
+  };
+};
+
+// =======================
+// 🏢 COMPANY ISOLATION
+// =======================
+const requireCompany = (req, res, next) => {
+  if (!req.user?.companyId) {
+    return res.status(403).json({
+      error: "No company assigned"
+    });
+  }
+
+  next();
+};
+
+module.exports = {
+  authenticateToken,
+  requireRole,     // 🔥 use this in routes
+  requireCompany   // 🔥 protects multi-tenant data
+};

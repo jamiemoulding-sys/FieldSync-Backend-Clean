@@ -10,7 +10,7 @@ const { query } = require('../database/connection');
 const { authenticateToken } = require('../middleware/auth');
 
 //
-// ✅ LOGIN (FULL DEBUG)
+// ✅ LOGIN (UPGRADED WITH ROLE + COMPANY)
 //
 router.post(
   '/login',
@@ -20,24 +20,12 @@ router.post(
   ],
   async (req, res) => {
     try {
-      console.log("🔥 LOGIN HIT");
-      console.log("📩 LOGIN BODY:", req.body);
-
       const { email, password } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({
-          error: "Missing email or password",
-          bodyReceived: req.body
-        });
-      }
 
       const result = await query(
         'SELECT * FROM users WHERE email = $1',
         [email]
       );
-
-      console.log("👤 DB RESULT:", result.rows);
 
       const user = result?.rows?.[0];
 
@@ -51,25 +39,26 @@ router.post(
         return res.status(401).json({ error: 'Invalid password' });
       }
 
-      // 🔥 CRITICAL DEBUG
-      console.log("🔐 JWT SECRET EXISTS:", !!process.env.JWT_SECRET);
-
+      // 🔥 TOKEN NOW INCLUDES ROLE + COMPANY
       const token = jwt.sign(
         {
           id: user.id,
-          email: user.email
+          email: user.email,
+          companyId: user.company_id || null,
+          role: user.role || 'admin', // default first user = admin
+          isPro: user.is_pro || false
         },
         process.env.JWT_SECRET,
         { expiresIn: '7d' }
       );
 
-      console.log("✅ TOKEN CREATED:", token);
-
-      return res.json({ 
+      return res.json({
         token,
-        debug: {
-          userId: user.id,
-          email: user.email
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          companyId: user.company_id
         }
       });
 
@@ -77,35 +66,59 @@ router.post(
       console.error('💥 LOGIN ERROR:', error);
 
       return res.status(500).json({
-        error: error.message,
-        stack: error.stack
+        error: error.message
       });
     }
   }
 );
 
 //
-// ✅ REGISTER
+// ✅ REGISTER (CREATES COMPANY + ADMIN USER)
 //
 router.post('/register', async (req, res) => {
-  console.log("🔥 REGISTER HIT");
-  console.log("📩 REGISTER BODY:", req.body);
-
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, companyName } = req.body;
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const result = await query(
-      `INSERT INTO users (email, password, name)
-       VALUES ($1, $2, $3)
+    // 🔥 1. CREATE COMPANY
+    const companyResult = await query(
+      `INSERT INTO companies (name)
+       VALUES ($1)
        RETURNING *`,
-      [email, hashedPassword, name || null]
+      [companyName || 'My Company']
     );
 
-    console.log("✅ USER CREATED:", result.rows[0]);
+    const company = companyResult.rows[0];
 
-    res.json({ user: result.rows[0] });
+    // 🔥 2. CREATE USER AS ADMIN
+    const userResult = await query(
+      `INSERT INTO users (email, password, name, company_id, role)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [email, hashedPassword, name || null, company.id, 'admin']
+    );
+
+    const user = userResult.rows[0];
+
+    // 🔥 3. CREATE TOKEN
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        companyId: company.id,
+        role: 'admin',
+        isPro: false
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user,
+      company
+    });
 
   } catch (error) {
     console.error("💥 REGISTER ERROR:", error);
@@ -118,13 +131,10 @@ router.post('/register', async (req, res) => {
 });
 
 //
-// ✅ APPLY ACCESS CODE
+// ✅ APPLY ACCESS CODE (UPGRADED)
 //
 router.post('/apply-code', authenticateToken, async (req, res) => {
   try {
-    console.log("🔥 APPLY CODE HIT");
-    console.log("👤 USER FROM TOKEN:", req.user);
-
     const { code } = req.body;
 
     if (code !== 'FULLACCESS2026') {
@@ -145,6 +155,8 @@ router.post('/apply-code', authenticateToken, async (req, res) => {
       {
         id: user.id,
         email: user.email,
+        companyId: user.company_id,
+        role: user.role,
         isPro: true
       },
       process.env.JWT_SECRET,
