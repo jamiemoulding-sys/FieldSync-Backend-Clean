@@ -1,27 +1,32 @@
 const { Pool } = require('pg');
 
-let pool;
+console.log("📡 Initializing DB connection...");
+console.log("📡 DATABASE_URL:", process.env.DATABASE_URL ? "Loaded ✅" : "Missing ❌");
 
-const connectWithRetry = () => {
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-      rejectUnauthorized: false
-    }
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// 🔥 Test connection on startup
+pool.connect()
+  .then(() => {
+    console.log('✅ DATABASE CONNECTED');
+  })
+  .catch(err => {
+    console.error('💥 DATABASE CONNECTION FAILED:', err.message);
   });
 
-  pool.connect()
-    .then(() => {
-      console.log('✅ DATABASE CONNECTED');
-    })
-    .catch(err => {
-      console.error('❌ DB CONNECTION FAILED, RETRYING...', err.message);
-      setTimeout(connectWithRetry, 5000);
-    });
-};
-
-connectWithRetry();
-
+// 🔥 Safe query wrapper
 module.exports = {
-  query: (text, params) => pool.query(text, params),
+  query: async (text, params) => {
+    try {
+      return await pool.query(text, params);
+    } catch (err) {
+      console.error("💥 QUERY ERROR:", err.message);
+      throw err;
+    }
+  }
 };
