@@ -19,7 +19,7 @@ const invitesRoutes = require('./routes/invites');
 const reportRoutes = require('./routes/reports');
 const billingRoutes = require('./routes/billing');
 const performanceRoutes = require('./routes/performance');
-const dashboardRoutes = require('./routes/dashboard'); // 🔥 NEW
+const dashboardRoutes = require('./routes/dashboard'); // ✅ dashboard
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -31,11 +31,19 @@ const PORT = process.env.PORT || 10000;
 // Stripe webhook (must be raw BEFORE json)
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
-// ✅ CORS (production safe)
-app.use(cors({
-  origin: '*', // change to frontend URL later
-  credentials: true
-}));
+// ✅ FIXED CORS (THIS WAS THE ISSUE)
+const corsOptions = {
+  origin: [
+    "https://app.zorviatech.co.uk",
+    "http://localhost:3000"
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // 🔥 preflight fix
 
 app.use(express.json());
 
@@ -60,7 +68,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/performance', performanceRoutes);
 
-// 🔥 ENTERPRISE DASHBOARD ROUTE
+// ✅ DASHBOARD
 app.use('/api/dashboard', dashboardRoutes);
 
 // =====================
