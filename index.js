@@ -19,38 +19,41 @@ const invitesRoutes = require('./routes/invites');
 const reportRoutes = require('./routes/reports');
 const billingRoutes = require('./routes/billing');
 const performanceRoutes = require('./routes/performance');
-const dashboardRoutes = require('./routes/dashboard'); // ✅ dashboard
+const dashboardRoutes = require('./routes/dashboard');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =====================
-// 🔐 MIDDLEWARE
+// 🔐 FORCE CORS FIX (CRITICAL)
+// =====================
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+
+  // 🔥 HANDLE PREFLIGHT
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
+// =====================
+// MIDDLEWARE
 // =====================
 
 // Stripe webhook (must be raw BEFORE json)
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
-
-// ✅ FIXED CORS (THIS WAS THE ISSUE)
-const corsOptions = {
-  origin: [
-    "https://app.zorviatech.co.uk",
-    "http://localhost:3000"
-  ],
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // 🔥 preflight fix
 
 app.use(express.json());
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // =====================
-// 🚀 ROUTES
+// ROUTES
 // =====================
 
 app.use('/api/auth', authRoutes);
@@ -67,36 +70,27 @@ app.use('/api', invitesRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/performance', performanceRoutes);
-
-// ✅ DASHBOARD
 app.use('/api/dashboard', dashboardRoutes);
 
 // =====================
-// ❤️ HEALTH CHECK
+// HEALTH
 // =====================
 
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    time: new Date()
-  });
+  res.json({ status: 'OK' });
 });
 
 // =====================
-// ❌ GLOBAL ERROR HANDLER
+// ERROR HANDLER
 // =====================
 
 app.use((err, req, res, next) => {
-  console.error('💥 GLOBAL ERROR:', err.stack);
-
-  res.status(500).json({
-    error: 'Something went wrong',
-    message: err.message
-  });
+  console.error('💥 ERROR:', err);
+  res.status(500).json({ error: err.message });
 });
 
 // =====================
-// 🚀 START SERVER
+// START
 // =====================
 
 app.listen(PORT, () => {
