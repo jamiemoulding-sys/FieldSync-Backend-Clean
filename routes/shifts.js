@@ -6,9 +6,23 @@ const { getDistanceInMeters } = require('../utils/distance');
 
 //
 // =======================
-// ✅ CLOCK IN (COMPANY SAFE 🔥)
+// 🔥 ACTIVITY LOGGER
 // =======================
+const logActivity = async (userId, companyId, action, metadata = {}) => {
+  try {
+    await query(`
+      INSERT INTO activity_logs (user_id, company_id, action, metadata)
+      VALUES ($1, $2, $3, $4)
+    `, [userId, companyId, action, JSON.stringify(metadata)]);
+  } catch (err) {
+    console.error("Activity log failed:", err.message);
+  }
+};
+
 //
+// =======================
+// ✅ CLOCK IN
+// =======================
 router.post('/clock-in', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -19,7 +33,6 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "No company assigned" });
     }
 
-    // 🔹 Get location (scoped)
     const locationRes = await query(
       'SELECT * FROM locations WHERE id = $1 AND company_id = $2',
       [location_id, companyId]
@@ -31,7 +44,6 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Location not found' });
     }
 
-    // 🔹 Distance check
     const distance = getDistanceInMeters(
       latitude,
       longitude,
@@ -45,10 +57,9 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       });
     }
 
-    // 🔹 Prevent duplicate shift
     const existing = await query(`
       SELECT * FROM shifts
-      WHERE user_id = $1 
+      WHERE user_id = $1
       AND company_id = $2
       AND clock_out_time IS NULL
     `, [userId, companyId]);
@@ -57,12 +68,11 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Already clocked in' });
     }
 
-    // 🔥 Check schedule (scoped)
     const today = new Date().toISOString().split('T')[0];
 
     const scheduleRes = await query(`
       SELECT * FROM schedules
-      WHERE user_id = $1 
+      WHERE user_id = $1
       AND company_id = $2
       AND date = $3
       LIMIT 1
@@ -77,12 +87,16 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
       isLate = true;
     }
 
-    // 🔹 Create shift (WITH company_id 🔥)
     const result = await query(`
       INSERT INTO shifts (user_id, location_id, latitude, longitude, clock_in_time, is_late, company_id)
       VALUES ($1, $2, $3, $4, NOW(), $5, $6)
       RETURNING *
     `, [userId, location_id, latitude, longitude, isLate, companyId]);
+
+    // 🔥 LOG ACTIVITY
+    await logActivity(userId, companyId, 'clock_in', {
+      isLate
+    });
 
     res.json({
       message: isLate ? 'Clocked in (late)' : 'Clocked in!',
@@ -101,9 +115,8 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
 
 //
 // =======================
-// ✅ CLOCK OUT (SAFE)
+// ✅ CLOCK OUT
 // =======================
-//
 router.post('/clock-out', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -112,7 +125,7 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
     const result = await query(`
       UPDATE shifts
       SET clock_out_time = NOW()
-      WHERE user_id = $1 
+      WHERE user_id = $1
       AND company_id = $2
       AND clock_out_time IS NULL
       RETURNING *
@@ -121,6 +134,9 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'No active shift found' });
     }
+
+    // 🔥 LOG ACTIVITY
+    await logActivity(userId, companyId, 'clock_out');
 
     res.json({ success: true, shift: result.rows[0] });
 
@@ -134,13 +150,12 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
 // =======================
 // 👤 ACTIVE SHIFT
 // =======================
-//
 router.get('/active', authenticateToken, async (req, res) => {
   try {
     const result = await query(`
       SELECT *
       FROM shifts
-      WHERE user_id = $1 
+      WHERE user_id = $1
       AND company_id = $2
       AND clock_out_time IS NULL
       ORDER BY clock_in_time DESC
@@ -160,9 +175,8 @@ router.get('/active', authenticateToken, async (req, res) => {
 
 //
 // =======================
-// 👥 ACTIVE SHIFTS (COMPANY ONLY 🔥)
+// 👥 ACTIVE SHIFTS
 // =======================
-//
 router.get('/active-all', authenticateToken, async (req, res) => {
   try {
     const result = await query(`
@@ -187,15 +201,14 @@ router.get('/active-all', authenticateToken, async (req, res) => {
 
 //
 // =======================
-// 📜 HISTORY (SAFE)
+// 📜 HISTORY
 // =======================
-//
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     const result = await query(`
       SELECT *
       FROM shifts
-      WHERE user_id = $1 
+      WHERE user_id = $1
       AND company_id = $2
       ORDER BY clock_in_time DESC
       LIMIT 20
@@ -214,37 +227,8 @@ router.get('/history', authenticateToken, async (req, res) => {
 
 //
 // =======================
-// 📍 UPDATE LOCATION (SAFE)
+// 📊 ANALYTICS
 // =======================
-//
-router.post('/update-location', authenticateToken, async (req, res) => {
-  try {
-    const { latitude, longitude } = req.body;
-
-    await query(`
-      UPDATE shifts
-      SET latitude = $1, longitude = $2
-      WHERE user_id = $3 
-      AND company_id = $4
-      AND clock_out_time IS NULL
-    `, [latitude, longitude, req.user.id, req.user.companyId]);
-
-    res.json({ success: true });
-
-  } catch (error) {
-    console.error('LOCATION UPDATE ERROR:', error);
-    res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
-  }
-});
-
-//
-// =======================
-// 📊 ANALYTICS (SAFE 🔥)
-// =======================
-//
 router.get('/analytics', authenticateToken, async (req, res) => {
   try {
     const result = await query(`
@@ -264,34 +248,6 @@ router.get('/analytics', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('ANALYTICS ERROR:', error);
-    res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
-  }
-});
-
-//
-// =======================
-// 🚨 PATTERNS (SAFE 🔥)
-// =======================
-//
-router.get('/patterns', authenticateToken, async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT
-        user_id,
-        COUNT(*) FILTER (WHERE is_late = true) as late_count,
-        COUNT(*) as total_shifts
-      FROM shifts
-      WHERE company_id = $1
-      GROUP BY user_id
-    `, [req.user.companyId]);
-
-    res.json(result.rows);
-
-  } catch (error) {
-    console.error('PATTERNS ERROR:', error);
     res.status(500).json({
       error: "REAL_ERROR",
       message: error.message

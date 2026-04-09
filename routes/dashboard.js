@@ -4,7 +4,7 @@ const { query } = require('../database/connection');
 const { authenticateToken } = require('../middleware/auth');
 
 //
-// 📊 DASHBOARD (COMPANY SAFE 🔥)
+// 📊 DASHBOARD (ENTERPRISE VERSION 🔥)
 //
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -14,26 +14,26 @@ router.get('/', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "No company assigned" });
     }
 
-    // 👥 total users
+    // 👥 USERS
     const usersRes = await query(
       `SELECT COUNT(*) FROM users WHERE company_id = $1`,
       [companyId]
     );
 
-    // ⏱ active shifts
+    // ⏱ ACTIVE SHIFTS
     const activeShiftsRes = await query(
-      `SELECT COUNT(*) FROM shifts 
+      `SELECT COUNT(*) FROM shifts
        WHERE company_id = $1 AND clock_out_time IS NULL`,
       [companyId]
     );
 
-    // 📋 total tasks
+    // 📋 TASKS
     const tasksRes = await query(
       `SELECT COUNT(*) FROM tasks WHERE company_id = $1`,
       [companyId]
     );
 
-    // 📊 completed tasks
+    // ✅ COMPLETED TASKS
     const completedRes = await query(
       `SELECT COUNT(*) FROM task_completions tc
        JOIN tasks t ON tc.task_id = t.id
@@ -41,11 +41,33 @@ router.get('/', authenticateToken, async (req, res) => {
       [companyId]
     );
 
+    // 🌴 HOLIDAY PENDING
+    const holidayRes = await query(
+      `SELECT COUNT(*) FROM holidays h
+       JOIN users u ON h.user_id = u.id
+       WHERE u.company_id = $1 AND h.status = 'pending'`,
+      [companyId]
+    );
+
+    // 📜 ACTIVITY FEED (LAST 10)
+    const activityRes = await query(`
+      SELECT a.*, u.name
+      FROM activity_logs a
+      JOIN users u ON u.id = a.user_id
+      WHERE a.company_id = $1
+      ORDER BY a.created_at DESC
+      LIMIT 10
+    `, [companyId]);
+
     res.json({
-      users: parseInt(usersRes.rows[0].count),
-      activeShifts: parseInt(activeShiftsRes.rows[0].count),
-      tasks: parseInt(tasksRes.rows[0].count),
-      completedTasks: parseInt(completedRes.rows[0].count)
+      stats: {
+        users: parseInt(usersRes.rows[0].count),
+        activeShifts: parseInt(activeShiftsRes.rows[0].count),
+        tasks: parseInt(tasksRes.rows[0].count),
+        completedTasks: parseInt(completedRes.rows[0].count),
+        pendingHolidays: parseInt(holidayRes.rows[0].count)
+      },
+      activity: activityRes.rows
     });
 
   } catch (error) {
