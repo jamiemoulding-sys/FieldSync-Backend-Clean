@@ -69,12 +69,13 @@ router.post('/login', [
     });
 
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
-  }
+  console.error('💥 LOGIN CRASH:', error);
+
+  res.status(500).json({
+    error: error.message,
+    stack: error.stack
+  });
+}
 });
 
 //
