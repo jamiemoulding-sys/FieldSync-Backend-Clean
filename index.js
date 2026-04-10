@@ -1,3 +1,4 @@
+// 🔥 SUPABASE FIX (Headers issue)
 const fetch = require('node-fetch');
 
 global.fetch = fetch;
@@ -22,25 +23,25 @@ const userRoutes = require('./routes/users');
 const paymentRoutes = require('./routes/payments');
 const scheduleRoutes = require('./routes/schedules');
 const companyRoutes = require('./routes/companies');
-const invitesRoutes = require('./routes/invite');
 const reportRoutes = require('./routes/reports');
 const billingRoutes = require('./routes/billing');
 const performanceRoutes = require('./routes/performance');
 const dashboardRoutes = require('./routes/dashboard');
 
+// 🔥 ONLY IMPORT ONCE
+const inviteRoutes = require('./routes/invite');
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =====================
-// 🔐 FORCE CORS FIX (CRITICAL)
+// 🔐 CORS FIX
 // =====================
-
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
 
-  // 🔥 HANDLE PREFLIGHT
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
@@ -59,10 +60,8 @@ app.use(express.json());
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.use('/api/invite', require('./routes/invite'));
-
 // =====================
-// ROUTES
+// ✅ ROUTES (CLEAN)
 // =====================
 
 app.use('/api/auth', authRoutes);
@@ -75,7 +74,10 @@ app.use('/api/users', userRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/companies', companyRoutes);
-app.use('/api', invitesRoutes);
+
+// 🔥 FIXED INVITE ROUTE (ONLY HERE)
+app.use('/api/invite', inviteRoutes);
+
 app.use('/api/reports', reportRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/performance', performanceRoutes);
