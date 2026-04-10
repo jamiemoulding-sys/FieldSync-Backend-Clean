@@ -1,37 +1,39 @@
 const express = require('express');
 const router = express.Router();
 
-const { authenticateToken, requireRole } = require('../middleware/auth');
-
+const { authenticateToken, requireRole, requireCompany } = require('../middleware/auth');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🔥 USE SERVICE ROLE KEY (CRITICAL)
+// 🔥 SAFE INIT
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("❌ Missing Supabase ENV");
+}
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-//
-// =======================
-// 📧 INVITE USER
-// =======================
 router.post('/',
   authenticateToken,
+  requireCompany,
   requireRole('admin'),
   async (req, res) => {
     try {
+      console.log("🔥 INVITE HIT");
+
       const { email, role } = req.body;
 
       if (!email) {
         return res.status(400).json({ error: 'Email required' });
       }
 
-      // 🔥 SEND SUPABASE INVITE
+      const baseUrl = (process.env.FRONTEND_URL || "").replace(/\/$/, '');
+
       const { data, error } = await supabase.auth.admin.inviteUserByEmail(
         email,
         {
-          redirectTo: `${process.env.FRONTEND_URL}/set-password`,
-
+          redirectTo: `${baseUrl}/set-password`,
           data: {
             role: role || 'employee',
             company_id: req.user.companyId
@@ -40,27 +42,26 @@ router.post('/',
       );
 
       if (error) {
-        console.error('❌ Supabase invite error:', error);
-        return res.status(500).json({ error: error.message });
+        console.error("❌ SUPABASE ERROR:", error);
+
+        return res.status(500).json({
+          error: error.message,
+          details: error
+        });
       }
 
-      if (error) {
-  console.error('❌ Supabase invite error:', error);
-
-  return res.status(500).json({
-    error: error.message,
-    full: error // 🔥 ADD THIS
-  });
-}
-
       return res.json({
-        message: 'Invite sent successfully',
+        message: "Invite sent",
         data
       });
 
     } catch (err) {
-      console.error('❌ Invite route error:', err);
-      res.status(500).json({ error: 'Invite failed' });
+      console.error("💥 INVITE CRASH:", err);
+
+      return res.status(500).json({
+        error: err.message || "Invite failed",
+        stack: err.stack
+      });
     }
   }
 );
