@@ -27,27 +27,22 @@ const reportRoutes = require('./routes/reports');
 const billingRoutes = require('./routes/billing');
 const performanceRoutes = require('./routes/performance');
 const dashboardRoutes = require('./routes/dashboard');
-
-// 🔥 ONLY IMPORT ONCE
 const inviteRoutes = require('./routes/invite');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =====================
-// 🔐 CORS FIX
+// 🔐 ✅ PROPER CORS FIX (CRITICAL)
 // =====================
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+app.use(cors({
+  origin: ["https://app.zorviatech.co.uk"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
+// 🔥 HANDLE PREFLIGHT (VERY IMPORTANT)
+app.options('*', cors());
 
 // =====================
 // MIDDLEWARE
@@ -61,7 +56,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // =====================
-// ✅ ROUTES (CLEAN)
+// ✅ ROUTES
 // =====================
 
 app.use('/api/auth', authRoutes);
@@ -75,7 +70,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/companies', companyRoutes);
 
-// 🔥 FIXED INVITE ROUTE (ONLY HERE)
+// ✅ INVITE
 app.use('/api/invite', inviteRoutes);
 
 app.use('/api/reports', reportRoutes);
@@ -97,7 +92,10 @@ app.get('/api/health', (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('💥 ERROR:', err);
-  res.status(500).json({ error: err.message });
+  res.status(500).json({
+    error: err.message,
+    stack: err.stack
+  });
 });
 
 // =====================
