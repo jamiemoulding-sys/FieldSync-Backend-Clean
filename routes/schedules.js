@@ -11,50 +11,54 @@ const { query } = require('../database/connection');
 
 //
 // =======================
-// 📅 GET ALL SCHEDULES (COMPANY SAFE)
+// 📅 GET ALL SCHEDULES
 // =======================
-router.get('/', authenticateToken, requireCompany, async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT s.*, u.name
-      FROM schedules s
-      JOIN users u ON u.id = s.user_id
-      WHERE u.company_id = $1
-      ORDER BY s.date DESC
-    `, [req.user.companyId]);
+router.get('/',
+  authenticateToken,
+  requireCompany,
+  async (req, res) => {
+    try {
+      const result = await query(`
+        SELECT s.*, u.name
+        FROM schedules s
+        JOIN users u ON u.id = s.user_id
+        WHERE u.company_id = $1
+        ORDER BY s.date DESC
+      `, [req.user.companyId]);
 
-    return res.json(result.rows);
-  } catch (error) {
-    console.error('GET schedules error:', error);
-    return res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
+      res.json(result.rows);
+
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Failed to fetch schedules' });
+    }
   }
-});
+);
 
 //
 // =======================
 // 👤 MY SCHEDULE
 // =======================
-router.get('/my-schedule', authenticateToken, requireCompany, async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT *
-      FROM schedules
-      WHERE user_id = $1
-      ORDER BY date DESC
-    `, [req.user.id]);
+router.get('/my-schedule',
+  authenticateToken,
+  requireCompany,
+  async (req, res) => {
+    try {
+      const result = await query(`
+        SELECT *
+        FROM schedules
+        WHERE user_id = $1
+        ORDER BY date DESC
+      `, [req.user.id]);
 
-    return res.json(result.rows);
-  } catch (error) {
-    console.error('MY schedule error:', error);
-    return res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
+      res.json(result.rows);
+
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Failed to fetch schedule' });
+    }
   }
-});
+);
 
 //
 // =======================
@@ -69,9 +73,7 @@ router.post('/',
       const { user_id, date, start_time, end_time } = req.body;
 
       if (!user_id || !date || !start_time || !end_time) {
-        return res.status(400).json({
-          error: "All fields required"
-        });
+        return res.status(400).json({ error: "All fields required" });
       }
 
       // 🔒 validate user belongs to company
@@ -86,27 +88,111 @@ router.post('/',
         });
       }
 
-      const result = await query(`
-        INSERT INTO schedules (user_id, date, start_time, end_time)
-        VALUES ($1, $2, $3, $4)
-        RETURNING *
-      `, [user_id, date, start_time, end_time]);
+      // 🚨 PREVENT DUPLICATE SHIFTS
+      const existing = await query(
+        `SELECT id FROM schedules
+         WHERE user_id = $1 AND date = $2`,
+        [user_id, date]
+      );
 
-      return res.status(201).json(result.rows[0]);
+      if (existing.rows.length > 0) {
+        return res.status(400).json({
+          error: 'User already has a shift that day'
+        });
+      }
+
+      const result = await query(`
+        INSERT INTO schedules (user_id, date, start_time, end_time, company_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `, [user_id, date, start_time, end_time, req.user.companyId]);
+
+      // 🧠 ACTIVITY LOG
+      await query(
+        `INSERT INTO activity_logs (company_id, user_id, action)
+         VALUES ($1, $2, $3)`,
+        [
+          req.user.companyId,
+          req.user.id,
+          `Created shift for user ${user_id} on ${date}`
+        ]
+      );
+
+      res.status(201).json(result.rows[0]);
 
     } catch (error) {
-      console.error('CREATE schedule error:', error);
-      return res.status(500).json({
-        error: "REAL_ERROR",
-        message: error.message
-      });
+      console.error(error);
+      res.status(500).json({ error: 'Create failed' });
     }
   }
 );
 
 //
 // =======================
-// ✏️ UPDATE SCHEDULE
+// 🚀 BULK CREATE (THIS FIXES YOUR MAIN PAIN)
+// =======================
+router.post('/bulk',
+  authenticateToken,
+  requireCompany,
+  requireRole('admin', 'manager'),
+  async (req, res) => {
+    try {
+      const { shifts } = req.body;
+
+      if (!Array.isArray(shifts) || shifts.length === 0) {
+        return res.status(400).json({
+          error: 'Shifts array required'
+        });
+      }
+
+      const created = [];
+
+      for (const s of shifts) {
+        const { user_id, date, start_time, end_time } = s;
+
+        // skip invalid
+        if (!user_id || !date) continue;
+
+        // prevent duplicates
+        const exists = await query(
+          `SELECT id FROM schedules WHERE user_id=$1 AND date=$2`,
+          [user_id, date]
+        );
+
+        if (exists.rows.length > 0) continue;
+
+        const result = await query(
+          `INSERT INTO schedules
+           (user_id, date, start_time, end_time, company_id)
+           VALUES ($1,$2,$3,$4,$5)
+           RETURNING *`,
+          [
+            user_id,
+            date,
+            start_time,
+            end_time,
+            req.user.companyId
+          ]
+        );
+
+        created.push(result.rows[0]);
+      }
+
+      res.json({
+        created: created.length,
+        data: created
+      });
+
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Bulk insert failed' });
+    }
+  }
+);
+
+//
+// =======================
+// ✏️ UPDATE
 // =======================
 router.put('/:id',
   authenticateToken,
@@ -116,43 +202,38 @@ router.put('/:id',
     try {
       const { start_time, end_time } = req.body;
 
-      // 🔒 ensure schedule belongs to company
-      const check = await query(`
-        SELECT s.id
-        FROM schedules s
-        JOIN users u ON u.id = s.user_id
-        WHERE s.id = $1 AND u.company_id = $2
-      `, [req.params.id, req.user.companyId]);
-
-      if (check.rows.length === 0) {
-        return res.status(403).json({
-          error: "Schedule not found"
-        });
-      }
-
       const result = await query(`
         UPDATE schedules
         SET start_time = $1,
             end_time = $2
         WHERE id = $3
+        AND company_id = $4
         RETURNING *
-      `, [start_time, end_time, req.params.id]);
+      `, [
+        start_time,
+        end_time,
+        req.params.id,
+        req.user.companyId
+      ]);
 
-      return res.json(result.rows[0]);
+      if (!result.rows[0]) {
+        return res.status(404).json({
+          error: 'Schedule not found'
+        });
+      }
+
+      res.json(result.rows[0]);
 
     } catch (error) {
-      console.error('UPDATE schedule error:', error);
-      return res.status(500).json({
-        error: "REAL_ERROR",
-        message: error.message
-      });
+      console.error(error);
+      res.status(500).json({ error: 'Update failed' });
     }
   }
 );
 
 //
 // =======================
-// ❌ DELETE SCHEDULE
+// ❌ DELETE
 // =======================
 router.delete('/:id',
   authenticateToken,
@@ -160,116 +241,115 @@ router.delete('/:id',
   requireRole('admin'),
   async (req, res) => {
     try {
-      const check = await query(`
-        SELECT s.id
-        FROM schedules s
-        JOIN users u ON u.id = s.user_id
-        WHERE s.id = $1 AND u.company_id = $2
-      `, [req.params.id, req.user.companyId]);
+      const result = await query(
+        `DELETE FROM schedules
+         WHERE id = $1 AND company_id = $2
+         RETURNING id`,
+        [req.params.id, req.user.companyId]
+      );
 
-      if (check.rows.length === 0) {
-        return res.status(403).json({
-          error: "Schedule not found"
+      if (!result.rows[0]) {
+        return res.status(404).json({
+          error: 'Schedule not found'
         });
       }
 
-      await query(`DELETE FROM schedules WHERE id = $1`, [req.params.id]);
-
-      return res.json({ message: 'Schedule deleted' });
+      res.json({ message: 'Deleted' });
 
     } catch (error) {
-      console.error('DELETE schedule error:', error);
-      return res.status(500).json({
-        error: "REAL_ERROR",
-        message: error.message
-      });
+      console.error(error);
+      res.status(500).json({ error: 'Delete failed' });
     }
   }
 );
 
 //
 // =======================
-// 🚨 LATE ARRIVALS
+// 🚨 LATE ARRIVALS (FIXED)
 // =======================
-router.get('/late-arrivals', authenticateToken, requireCompany, async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT u.name, s.start_time, sh.clock_in_time
-      FROM schedules s
-      JOIN users u ON u.id = s.user_id
-      LEFT JOIN shifts sh ON sh.user_id = s.user_id
-        AND DATE(sh.clock_in_time) = s.date
-      WHERE u.company_id = $1
-      AND sh.clock_in_time > s.start_time
-    `, [req.user.companyId]);
+router.get('/late-arrivals',
+  authenticateToken,
+  requireCompany,
+  async (req, res) => {
+    try {
+      const result = await query(`
+        SELECT u.name, s.date, s.start_time, sh.clock_in_time
+        FROM schedules s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN shifts sh 
+          ON sh.user_id = s.user_id
+          AND DATE(sh.clock_in_time) = s.date
+        WHERE u.company_id = $1
+        AND sh.clock_in_time IS NOT NULL
+        AND sh.clock_in_time > s.start_time
+      `, [req.user.companyId]);
 
-    return res.json(result.rows);
+      res.json(result.rows);
 
-  } catch (error) {
-    console.error('LATE arrivals error:', error);
-    return res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Late arrivals failed' });
+    }
   }
-});
+);
 
 //
 // =======================
-// 📅 HOLIDAY REQUESTS
+// 📅 HOLIDAY REQUESTS (FIXED)
 // =======================
 
 // CREATE
-router.post('/holiday-requests', authenticateToken, requireCompany, async (req, res) => {
-  try {
-    const { start_date, end_date } = req.body;
+router.post('/holiday-requests',
+  authenticateToken,
+  requireCompany,
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.body;
 
-    if (!start_date || !end_date) {
-      return res.status(400).json({
-        error: "Dates required"
-      });
+      if (!start_date || !end_date) {
+        return res.status(400).json({ error: "Dates required" });
+      }
+
+      const result = await query(`
+        INSERT INTO holidays 
+        (user_id, start_date, end_date, status, company_id)
+        VALUES ($1, $2, $3, 'pending', $4)
+        RETURNING *
+      `, [req.user.id, start_date, end_date, req.user.companyId]);
+
+      res.status(201).json(result.rows[0]);
+
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Create failed' });
     }
-
-    const result = await query(`
-      INSERT INTO holidays (user_id, start_date, end_date)
-      VALUES ($1, $2, $3)
-      RETURNING *
-    `, [req.user.id, start_date, end_date]);
-
-    return res.status(201).json(result.rows[0]);
-
-  } catch (error) {
-    console.error('CREATE holiday error:', error);
-    return res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
   }
-});
+);
 
 // GET ALL
-router.get('/holiday-requests', authenticateToken, requireCompany, async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT h.*, u.name
-      FROM holidays h
-      JOIN users u ON u.id = h.user_id
-      WHERE u.company_id = $1
-      ORDER BY h.start_date DESC
-    `, [req.user.companyId]);
+router.get('/holiday-requests',
+  authenticateToken,
+  requireCompany,
+  async (req, res) => {
+    try {
+      const result = await query(`
+        SELECT h.*, u.name
+        FROM holidays h
+        JOIN users u ON u.id = h.user_id
+        WHERE h.company_id = $1
+        ORDER BY h.start_date DESC
+      `, [req.user.companyId]);
 
-    return res.json(result.rows);
+      res.json(result.rows);
 
-  } catch (error) {
-    console.error('GET holidays error:', error);
-    return res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Fetch failed' });
+    }
   }
-});
+);
 
-// APPROVE / REJECT
+// UPDATE STATUS
 router.put('/holiday-requests/:id',
   authenticateToken,
   requireCompany,
@@ -278,40 +358,24 @@ router.put('/holiday-requests/:id',
     try {
       const { status } = req.body;
 
-      if (!['approved', 'rejected', 'pending'].includes(status)) {
-        return res.status(400).json({
-          error: "Invalid status"
-        });
-      }
-
-      const check = await query(`
-        SELECT h.id
-        FROM holidays h
-        JOIN users u ON u.id = h.user_id
-        WHERE h.id = $1 AND u.company_id = $2
-      `, [req.params.id, req.user.companyId]);
-
-      if (check.rows.length === 0) {
-        return res.status(403).json({
-          error: "Holiday not found"
-        });
-      }
-
       const result = await query(`
         UPDATE holidays
         SET status = $1
-        WHERE id = $2
+        WHERE id = $2 AND company_id = $3
         RETURNING *
-      `, [status, req.params.id]);
+      `, [status, req.params.id, req.user.companyId]);
 
-      return res.json(result.rows[0]);
+      if (!result.rows[0]) {
+        return res.status(404).json({
+          error: 'Holiday not found'
+        });
+      }
+
+      res.json(result.rows[0]);
 
     } catch (error) {
-      console.error('UPDATE holiday error:', error);
-      return res.status(500).json({
-        error: "REAL_ERROR",
-        message: error.message
-      });
+      console.error(error);
+      res.status(500).json({ error: 'Update failed' });
     }
   }
 );
@@ -322,55 +386,19 @@ router.delete('/holiday-requests/:id',
   requireCompany,
   async (req, res) => {
     try {
-      const check = await query(`
-        SELECT h.id
-        FROM holidays h
-        JOIN users u ON u.id = h.user_id
-        WHERE h.id = $1 AND u.company_id = $2
-      `, [req.params.id, req.user.companyId]);
+      await query(
+        `DELETE FROM holidays
+         WHERE id = $1 AND company_id = $2`,
+        [req.params.id, req.user.companyId]
+      );
 
-      if (check.rows.length === 0) {
-        return res.status(403).json({
-          error: "Holiday not found"
-        });
-      }
-
-      await query(`DELETE FROM holidays WHERE id = $1`, [req.params.id]);
-
-      return res.json({ message: 'Holiday deleted' });
+      res.json({ message: 'Deleted' });
 
     } catch (error) {
-      console.error('DELETE holiday error:', error);
-      return res.status(500).json({
-        error: "REAL_ERROR",
-        message: error.message
-      });
+      console.error(error);
+      res.status(500).json({ error: 'Delete failed' });
     }
   }
 );
-
-//
-// =======================
-// 📊 TIMESHEET
-// =======================
-router.get('/timesheet', authenticateToken, requireCompany, async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT *
-      FROM shifts
-      WHERE user_id = $1
-      ORDER BY clock_in_time DESC
-    `, [req.user.id]);
-
-    return res.json(result.rows);
-
-  } catch (error) {
-    console.error('TIMESHEET error:', error);
-    return res.status(500).json({
-      error: "REAL_ERROR",
-      message: error.message
-    });
-  }
-});
 
 module.exports = router;

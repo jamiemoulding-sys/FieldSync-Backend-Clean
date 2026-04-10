@@ -118,7 +118,6 @@ router.post('/register',
         [email, hashedPassword, name, role, req.user.companyId]
       );
 
-      // 🧠 ACTIVITY LOG
       await query(
         `INSERT INTO activity_logs (company_id, user_id, action)
          VALUES ($1, $2, $3)`,
@@ -185,6 +184,13 @@ router.put('/:id/role',
         return res.status(400).json({ error: 'Invalid role' });
       }
 
+      // ❌ prevent self-edit
+      if (req.user.id === req.params.id) {
+        return res.status(400).json({
+          error: 'You cannot change your own role'
+        });
+      }
+
       if (req.user.role === 'manager' && role === 'admin') {
         return res.status(403).json({
           error: 'Managers cannot assign admin role'
@@ -198,7 +204,6 @@ router.put('/:id/role',
         [role, req.params.id, req.user.companyId]
       );
 
-      // 🧠 ACTIVITY LOG
       await query(
         `INSERT INTO activity_logs (company_id, user_id, action)
          VALUES ($1, $2, $3)`,
@@ -230,9 +235,28 @@ router.put('/:id/temp-role',
     try {
       const { role, expiresAt } = req.body;
 
+      // ✅ REMOVE TEMP ROLE
+      if (!role) {
+        await query(
+          `UPDATE users
+           SET temp_role = NULL,
+               temp_role_expires = NULL
+           WHERE id = $1 AND company_id = $2`,
+          [req.params.id, req.user.companyId]
+        );
+
+        return res.json({ message: 'Temporary role removed' });
+      }
+
       if (!['manager', 'admin'].includes(role)) {
         return res.status(400).json({
           error: 'Invalid temp role'
+        });
+      }
+
+      if (!expiresAt) {
+        return res.status(400).json({
+          error: 'Expiry date required'
         });
       }
 
@@ -250,7 +274,6 @@ router.put('/:id/temp-role',
         [role, expiresAt, req.params.id, req.user.companyId]
       );
 
-      // 🧠 ACTIVITY LOG
       await query(
         `INSERT INTO activity_logs (company_id, user_id, action)
          VALUES ($1, $2, $3)`,
