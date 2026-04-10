@@ -44,6 +44,15 @@ router.post('/',
         return res.status(500).json({ error: error.message });
       }
 
+      if (error) {
+  console.error('❌ Supabase invite error:', error);
+
+  return res.status(500).json({
+    error: error.message,
+    full: error // 🔥 ADD THIS
+  });
+}
+
       return res.json({
         message: 'Invite sent successfully',
         data
