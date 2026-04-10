@@ -4,7 +4,6 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const { query } = require('../database/connection');
 
-// 🔥 IMPORT NEW MIDDLEWARE
 const {
   authenticateToken,
   requireRole,
@@ -15,9 +14,8 @@ const router = express.Router();
 
 //
 // =======================
-// 🔐 LOGIN (UPDATED FOR COMPANY + ROLE)
+// 🔐 LOGIN
 // =======================
-//
 router.post('/login', [
   body('email').isEmail().normalizeEmail(),
   body('password').notEmpty()
@@ -47,7 +45,6 @@ router.post('/login', [
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // 🔥 TOKEN NOW HAS COMPANY + ROLE
     const token = jwt.sign(
       {
         id: user.id,
@@ -82,12 +79,11 @@ router.post('/login', [
 
 //
 // =======================
-// 🧾 REGISTER (ADMIN CREATES USER IN SAME COMPANY)
+// 🧾 REGISTER (ADMIN ONLY)
 // =======================
-//
 router.post('/register',
   authenticateToken,
-  requireRole('admin'), // 🔥 ONLY ADMINS CAN CREATE USERS
+  requireRole('admin'),
   requireCompany,
   [
     body('email').isEmail().normalizeEmail(),
@@ -115,7 +111,6 @@ router.post('/register',
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // 🔥 USER CREATED IN SAME COMPANY
       const result = await query(
         `INSERT INTO users (email, password, name, role, company_id)
          VALUES ($1, $2, $3, $4, $5)
@@ -123,10 +118,19 @@ router.post('/register',
         [email, hashedPassword, name, role, req.user.companyId]
       );
 
-      const newUser = result.rows[0];
+      // 🧠 ACTIVITY LOG
+      await query(
+        `INSERT INTO activity_logs (company_id, user_id, action)
+         VALUES ($1, $2, $3)`,
+        [
+          req.user.companyId,
+          req.user.id,
+          `Created user ${email} with role ${role}`
+        ]
+      );
 
       res.status(201).json({
-        user: newUser,
+        user: result.rows[0],
         message: 'User created successfully'
       });
 
@@ -142,16 +146,15 @@ router.post('/register',
 
 //
 // =======================
-// 👥 GET ALL USERS (COMPANY ISOLATED)
+// 👥 GET USERS
 // =======================
-//
 router.get('/',
   authenticateToken,
   requireCompany,
   async (req, res) => {
     try {
       const result = await query(`
-        SELECT id, name, email, role
+        SELECT id, name, email, role, temp_role, temp_role_expires
         FROM users
         WHERE company_id = $1
         ORDER BY name ASC
@@ -168,9 +171,109 @@ router.get('/',
 
 //
 // =======================
+// 🔥 UPDATE ROLE (PERMANENT)
+// =======================
+router.put('/:id/role',
+  authenticateToken,
+  requireCompany,
+  requireRole('manager', 'admin'),
+  async (req, res) => {
+    try {
+      const { role } = req.body;
+
+      if (!['employee', 'manager', 'admin'].includes(role)) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
+
+      if (req.user.role === 'manager' && role === 'admin') {
+        return res.status(403).json({
+          error: 'Managers cannot assign admin role'
+        });
+      }
+
+      await query(
+        `UPDATE users
+         SET role = $1
+         WHERE id = $2 AND company_id = $3`,
+        [role, req.params.id, req.user.companyId]
+      );
+
+      // 🧠 ACTIVITY LOG
+      await query(
+        `INSERT INTO activity_logs (company_id, user_id, action)
+         VALUES ($1, $2, $3)`,
+        [
+          req.user.companyId,
+          req.user.id,
+          `Changed role of user ${req.params.id} to ${role}`
+        ]
+      );
+
+      res.json({ message: 'Role updated successfully' });
+
+    } catch (error) {
+      console.error('Role update error:', error);
+      res.status(500).json({ error: 'Failed to update role' });
+    }
+  }
+);
+
+//
+// =======================
+// 🔁 TEMP ROLE (HOLIDAY COVER)
+// =======================
+router.put('/:id/temp-role',
+  authenticateToken,
+  requireCompany,
+  requireRole('manager', 'admin'),
+  async (req, res) => {
+    try {
+      const { role, expiresAt } = req.body;
+
+      if (!['manager', 'admin'].includes(role)) {
+        return res.status(400).json({
+          error: 'Invalid temp role'
+        });
+      }
+
+      if (req.user.role === 'manager' && role === 'admin') {
+        return res.status(403).json({
+          error: 'Managers cannot assign admin role'
+        });
+      }
+
+      await query(
+        `UPDATE users
+         SET temp_role = $1,
+             temp_role_expires = $2
+         WHERE id = $3 AND company_id = $4`,
+        [role, expiresAt, req.params.id, req.user.companyId]
+      );
+
+      // 🧠 ACTIVITY LOG
+      await query(
+        `INSERT INTO activity_logs (company_id, user_id, action)
+         VALUES ($1, $2, $3)`,
+        [
+          req.user.companyId,
+          req.user.id,
+          `Temporary role ${role} assigned to user ${req.params.id}`
+        ]
+      );
+
+      res.json({ message: 'Temporary role assigned' });
+
+    } catch (error) {
+      console.error('Temp role error:', error);
+      res.status(500).json({ error: 'Failed to assign temp role' });
+    }
+  }
+);
+
+//
+// =======================
 // ❌ DELETE USER (ADMIN ONLY)
 // =======================
-//
 router.delete('/:id',
   authenticateToken,
   requireRole('admin'),
@@ -181,6 +284,16 @@ router.delete('/:id',
         `DELETE FROM users
          WHERE id = $1 AND company_id = $2`,
         [req.params.id, req.user.companyId]
+      );
+
+      await query(
+        `INSERT INTO activity_logs (company_id, user_id, action)
+         VALUES ($1, $2, $3)`,
+        [
+          req.user.companyId,
+          req.user.id,
+          `Deleted user ${req.params.id}`
+        ]
       );
 
       res.json({ message: 'User deleted' });

@@ -1,10 +1,11 @@
 const jwt = require('jsonwebtoken');
+const { query } = require('../database/connection');
 
 //
 // =======================
 // 🔐 AUTH MIDDLEWARE
 // =======================
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
 
@@ -24,15 +25,51 @@ const authenticateToken = (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 🔥 FORCE SAFE STRUCTURE
+    // 🔥 ALWAYS FETCH USER FROM DB (FOR LIVE ROLE + TEMP ROLE)
+    const result = await query(
+      `SELECT id, email, role, company_id, temp_role, temp_role_expires
+       FROM users
+       WHERE id = $1`,
+      [decoded.id]
+    );
+
+    const user = result.rows[0];
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    let finalRole = user.role;
+
+    // =======================
+    // 🔁 TEMP ROLE OVERRIDE
+    // =======================
+    if (user.temp_role && user.temp_role_expires) {
+      const now = new Date();
+      const expiry = new Date(user.temp_role_expires);
+
+      if (expiry > now) {
+        finalRole = user.temp_role;
+      } else {
+        // 🧹 AUTO CLEANUP EXPIRED TEMP ROLE
+        await query(
+          `UPDATE users
+           SET temp_role = NULL,
+               temp_role_expires = NULL
+           WHERE id = $1`,
+          [user.id]
+        );
+      }
+    }
+
     req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      companyId: decoded.companyId || null,
-      role: decoded.role || 'employee'
+      id: user.id,
+      email: user.email,
+      companyId: user.company_id,
+      role: finalRole
     };
 
-    return next();
+    next();
 
   } catch (err) {
     console.error("💥 JWT ERROR:", err.message);
@@ -46,7 +83,7 @@ const authenticateToken = (req, res, next) => {
 
 //
 // =======================
-// 👑 ROLE CHECK
+// 👑 ROLE CHECK (HIERARCHY)
 // =======================
 const requireRole = (...roles) => {
   return (req, res, next) => {
@@ -56,14 +93,26 @@ const requireRole = (...roles) => {
       });
     }
 
-    if (!roles.includes(req.user.role)) {
+    const hierarchy = {
+      employee: 1,
+      manager: 2,
+      admin: 3
+    };
+
+    const userLevel = hierarchy[req.user.role] || 0;
+
+    const allowed = roles.some(role => {
+      return userLevel >= hierarchy[role];
+    });
+
+    if (!allowed) {
       return res.status(403).json({
         error: "Forbidden",
         message: `Requires role: ${roles.join(', ')}`
       });
     }
 
-    return next();
+    next();
   };
 };
 
@@ -78,7 +127,7 @@ const requireCompany = (req, res, next) => {
     });
   }
 
-  return next();
+  next();
 };
 
 module.exports = {
