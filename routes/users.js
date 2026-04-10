@@ -16,15 +16,9 @@ const router = express.Router();
 // =======================
 // 🔐 LOGIN
 // =======================
-router.post('/login', [
-  body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty()
-], async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    console.log("🔥 LOGIN HIT");
 
     const { email, password } = req.body;
 
@@ -35,47 +29,46 @@ router.post('/login', [
 
     const user = result.rows[0];
 
+    console.log("USER:", user);
+
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
+    if (!user.password) {
+      return res.status(500).json({ error: 'User has no password set' });
+    }
+
+    const validPassword = await require('bcryptjs').compare(
+      password,
+      user.password
+    );
 
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
+    const token = require('jsonwebtoken').sign(
       {
         id: user.id,
         email: user.email,
-        name: user.name,
         role: user.role,
-        companyId: user.company_id || null
+        companyId: user.company_id
       },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        companyId: user.company_id
-      }
-    });
+    res.json({ token });
 
   } catch (error) {
-  console.error('💥 LOGIN CRASH:', error);
+    console.error("💥 LOGIN CRASH:", error);
 
-  res.status(500).json({
-    error: error.message,
-    stack: error.stack
-  });
-}
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack
+    });
+  }
 });
 
 //
