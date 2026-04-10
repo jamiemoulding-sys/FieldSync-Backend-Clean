@@ -10,10 +10,12 @@ const { authenticateToken } = require('../middleware/auth');
 
 //
 // =======================
-// ✅ LOGIN (CLEAN + SAFE)
+// ✅ LOGIN (FIXED - NO CRASHES)
 // =======================
 router.post('/login', async (req, res) => {
   try {
+    console.log("🔥 LOGIN HIT");
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -27,25 +29,30 @@ router.post('/login', async (req, res) => {
 
     const user = result.rows[0];
 
+    // ✅ Do not reveal if user exists
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // 🔥 CRITICAL FIX — prevent bcrypt crash
+    if (!user.password) {
+      return res.status(400).json({
+        error: "No password set. Please complete invite or reset password."
+      });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
 
     if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    // ✅ ALWAYS SET ROLE
-    const role = user.role || 'admin';
 
     const token = jwt.sign(
       {
         id: user.id,
         email: user.email,
         companyId: user.company_id || null,
-        role,
+        role: user.role || 'admin',
         isPro: user.is_pro || false
       },
       process.env.JWT_SECRET,
@@ -57,7 +64,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        role,
+        role: user.role || 'admin',
         companyId: user.company_id,
         isPro: user.is_pro || false
       }
@@ -67,7 +74,8 @@ router.post('/login', async (req, res) => {
     console.error('💥 LOGIN ERROR:', error);
 
     res.status(500).json({
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });
@@ -134,7 +142,8 @@ router.post('/register', async (req, res) => {
     console.error("💥 REGISTER ERROR:", error);
 
     res.status(500).json({
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });
@@ -179,7 +188,8 @@ router.post('/apply-code', authenticateToken, async (req, res) => {
     console.error("💥 APPLY CODE ERROR:", error);
 
     res.status(500).json({
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });
