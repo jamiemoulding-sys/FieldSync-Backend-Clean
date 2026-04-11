@@ -1,50 +1,61 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { body, validationResult } = require("express-validator");
 const { query } = require("../database/connection");
 
 const {
   authenticateToken,
-  requireRole,
-  requireCompany,
 } = require("../middleware/auth");
 
 const router = express.Router();
 
-//
-// ====================================
-// 🔐 TOKEN BUILDER
-// ====================================
+/* ====================================
+   🔐 TOKEN BUILDER
+==================================== */
 function createToken(user) {
   return jwt.sign(
     {
       id: user.id,
       email: user.email,
-      role: user.role,
-      companyId: user.company_id,
+      role: user.role || "employee",
+      companyId: user.company_id || null,
+      isPro: user.is_pro || false,
+      name: user.name || "",
+      phone: user.phone || "",
+      jobTitle: user.job_title || "",
+      companyName:
+        user.company_name || "",
     },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
 
-//
-// ====================================
-// 🔐 LOGIN
-// ====================================
+/* ====================================
+   🔐 LOGIN
+==================================== */
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } =
+      req.body;
 
     if (!email || !password) {
       return res.status(400).json({
-        error: "Email and password required",
+        error:
+          "Email and password required",
       });
     }
 
     const result = await query(
-      "SELECT * FROM users WHERE email = $1",
+      `
+      SELECT
+        u.*,
+        c.name AS company_name
+      FROM users u
+      LEFT JOIN companies c
+      ON c.id = u.company_id
+      WHERE u.email = $1
+      `,
       [email]
     );
 
@@ -56,10 +67,11 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const valid = await bcrypt.compare(
-      password,
-      user.password
-    );
+    const valid =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
 
     if (!valid) {
       return res.status(401).json({
@@ -67,18 +79,31 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const token = createToken(user);
+    const token =
+      createToken(user);
 
     res.json({
       token,
       user: {
         id: user.id,
         email: user.email,
-        name: user.name || "",
-        phone: user.phone || "",
-        role: user.role,
-        companyId: user.company_id,
-        isPro: user.is_pro || false,
+        name:
+          user.name || "",
+        phone:
+          user.phone || "",
+        role:
+          user.role ||
+          "employee",
+        companyId:
+          user.company_id,
+        companyName:
+          user.company_name ||
+          "",
+        jobTitle:
+          user.job_title ||
+          "",
+        isPro:
+          user.is_pro || false,
       },
     });
   } catch (error) {
@@ -93,10 +118,9 @@ router.post("/login", async (req, res) => {
   }
 });
 
-//
-// ====================================
-// 🆕 REGISTER (PUBLIC FIRST USER)
-// ====================================
+/* ====================================
+   🆕 REGISTER
+==================================== */
 router.post("/register", async (req, res) => {
   try {
     const {
@@ -112,14 +136,16 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const existing = await query(
-      "SELECT id FROM users WHERE email = $1",
-      [email]
-    );
+    const existing =
+      await query(
+        "SELECT id FROM users WHERE email = $1",
+        [email]
+      );
 
     if (existing.rows.length) {
       return res.status(400).json({
-        error: "Email already exists",
+        error:
+          "Email already exists",
       });
     }
 
@@ -135,7 +161,7 @@ router.post("/register", async (req, res) => {
         INSERT INTO companies (name)
         VALUES ($1)
         RETURNING *
-      `,
+        `,
         [
           companyName ||
             "My Company",
@@ -149,21 +175,33 @@ router.post("/register", async (req, res) => {
       await query(
         `
         INSERT INTO users
-        (email,password,name,role,company_id)
-        VALUES ($1,$2,$3,$4,$5)
+        (
+          email,
+          password,
+          name,
+          role,
+          company_id,
+          is_pro
+        )
+        VALUES ($1,$2,$3,$4,$5,$6)
         RETURNING *
-      `,
+        `,
         [
           email,
           hashed,
-          name || "Owner",
+          name ||
+            "Owner",
           "admin",
           company.id,
+          false,
         ]
       );
 
     const user =
       userRes.rows[0];
+
+    user.company_name =
+      company.name;
 
     const token =
       createToken(user);
@@ -177,6 +215,9 @@ router.post("/register", async (req, res) => {
         role: user.role,
         companyId:
           user.company_id,
+        companyName:
+          company.name,
+        isPro: false,
       },
     });
   } catch (error) {
@@ -192,10 +233,9 @@ router.post("/register", async (req, res) => {
   }
 });
 
-//
-// ====================================
-// 👤 GET PROFILE
-// ====================================
+/* ====================================
+   👤 GET PROFILE
+==================================== */
 router.get(
   "/me",
   authenticateToken,
@@ -205,11 +245,20 @@ router.get(
         await query(
           `
         SELECT
-          id,email,name,phone,
-          role,company_id,is_pro
-        FROM users
-        WHERE id = $1
-      `,
+          u.id,
+          u.email,
+          u.name,
+          u.phone,
+          u.role,
+          u.company_id,
+          u.is_pro,
+          u.job_title,
+          c.name AS company_name
+        FROM users u
+        LEFT JOIN companies c
+        ON c.id = u.company_id
+        WHERE u.id = $1
+        `,
           [req.user.id]
         );
 
@@ -225,10 +274,9 @@ router.get(
   }
 );
 
-//
-// ====================================
-// ✏️ UPDATE PROFILE
-// ====================================
+/* ====================================
+   ✏️ UPDATE PROFILE
+==================================== */
 router.put(
   "/me",
   authenticateToken,
@@ -238,6 +286,7 @@ router.put(
         name,
         phone,
         companyName,
+        jobTitle,
       } = req.body;
 
       const result =
@@ -246,15 +295,23 @@ router.put(
         UPDATE users
         SET
           name = $1,
-          phone = $2
-        WHERE id = $3
+          phone = $2,
+          job_title = $3
+        WHERE id = $4
         RETURNING
-          id,email,name,phone,
-          role,company_id,is_pro
-      `,
+          id,
+          email,
+          name,
+          phone,
+          role,
+          company_id,
+          is_pro,
+          job_title
+        `,
           [
             name || "",
             phone || "",
+            jobTitle || "",
             req.user.id,
           ]
         );
@@ -265,7 +322,7 @@ router.put(
           UPDATE companies
           SET name = $1
           WHERE id = $2
-        `,
+          `,
           [
             companyName,
             req.user.companyId,
@@ -273,8 +330,29 @@ router.put(
         );
       }
 
+      const updated =
+        await query(
+          `
+        SELECT
+          u.id,
+          u.email,
+          u.name,
+          u.phone,
+          u.role,
+          u.company_id,
+          u.is_pro,
+          u.job_title,
+          c.name AS company_name
+        FROM users u
+        LEFT JOIN companies c
+        ON c.id = u.company_id
+        WHERE u.id = $1
+        `,
+          [req.user.id]
+        );
+
       res.json(
-        result.rows[0]
+        updated.rows[0]
       );
     } catch (error) {
       console.error(

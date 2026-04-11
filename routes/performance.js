@@ -4,6 +4,9 @@ const router = express.Router();
 const { query } = require("../database/connection");
 const { authenticateToken } = require("../middleware/auth");
 
+/* ===================================
+   📊 PERFORMANCE
+=================================== */
 router.get("/", authenticateToken, async (req, res) => {
   try {
     const companyId = req.user.companyId;
@@ -18,20 +21,17 @@ router.get("/", authenticateToken, async (req, res) => {
       `
       SELECT
         u.id,
-        u.name,
+        COALESCE(u.name,'User') AS name,
         u.email,
 
-        COUNT(DISTINCT s.id) FILTER (
-          WHERE s.clock_in_time IS NOT NULL
-        ) AS total_shifts,
+        COUNT(DISTINCT s.id) AS total_shifts,
 
         COUNT(DISTINCT s.id) FILTER (
-          WHERE sch.id IS NOT NULL
-          AND s.clock_in_time > sch.start_time
+          WHERE s.is_late = true
         ) AS late_count,
 
         COUNT(DISTINCT sch.id) FILTER (
-          WHERE sch.date = CURRENT_DATE
+          WHERE sch.date < CURRENT_DATE
           AND s.id IS NULL
         ) AS missed_shifts,
 
@@ -53,24 +53,24 @@ router.get("/", authenticateToken, async (req, res) => {
           (
             SELECT COUNT(*)
             FROM tasks t
-            WHERE t.completed_by = u.id
+            WHERE t.user_id = u.id
+            AND (
+              t.completed = true
+              OR t.status = 'completed'
+            )
           ),
           0
         ) AS completed_tasks
 
       FROM users u
 
-      LEFT JOIN schedules sch
-        ON sch.user_id = u.id
-        AND sch.company_id = $1
-
       LEFT JOIN shifts s
         ON s.user_id = u.id
         AND s.company_id = $1
-        AND (
-          sch.id IS NULL
-          OR DATE(s.clock_in_time) = sch.date
-        )
+
+      LEFT JOIN schedules sch
+        ON sch.user_id = u.id
+        AND sch.company_id = $1
 
       WHERE u.company_id = $1
 
@@ -80,7 +80,7 @@ router.get("/", authenticateToken, async (req, res) => {
         u.email
 
       ORDER BY u.name ASC
-    `,
+      `,
       [companyId]
     );
 
@@ -107,56 +107,64 @@ router.get("/", authenticateToken, async (req, res) => {
 
       const latenessRate =
         totalShifts > 0
-          ? (lateCount / totalShifts) * 100
+          ? (lateCount /
+              totalShifts) *
+            100
           : 0;
 
       let reliability =
         100 -
         latenessRate -
-        missed * 12;
+        missed * 10;
 
       if (reliability < 0) {
         reliability = 0;
       }
 
-      const score = Math.min(
-        Math.round(
-          totalShifts * 10 +
-            completed * 4 +
-            hoursWorked -
-            lateCount * 6 -
-            missed * 10
-        ),
-        100
-      );
+      let score =
+        totalShifts * 8 +
+        completed * 5 +
+        hoursWorked -
+        lateCount * 6 -
+        missed * 10;
+
+      if (score > 100) score = 100;
+      if (score < 0) score = 0;
 
       return {
         id: u.id,
         name: u.name,
         email: u.email,
-        total_shifts: totalShifts,
-        late_count: lateCount,
-        missed_shifts: missed,
-        completed_tasks: completed,
+        total_shifts:
+          totalShifts,
+        late_count:
+          lateCount,
+        missed_shifts:
+          missed,
+        completed_tasks:
+          completed,
         hours_worked: Number(
           hoursWorked.toFixed(1)
         ),
-        latenessRate: Math.round(
-          latenessRate
-        ),
-        reliability: Math.round(
-          reliability
-        ),
-        score: Math.max(0, score),
+        latenessRate:
+          Math.round(
+            latenessRate
+          ),
+        reliability:
+          Math.round(
+            reliability
+          ),
+        score:
+          Math.round(score),
       };
     });
 
     data.sort(
-      (a, b) => b.score - a.score
+      (a, b) =>
+        b.score - a.score
     );
 
     res.json(data);
-
   } catch (err) {
     console.error(
       "PERFORMANCE ERROR:",
