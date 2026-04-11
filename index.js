@@ -11,6 +11,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const announcementRoutes = require("./routes/announcements");
 
 // ROUTES
 const authRoutes = require('./routes/auth');
@@ -47,7 +48,7 @@ app.options('*', cors());
 // =====================
 // MIDDLEWARE
 // =====================
-
+app.use("/api/announcements", announcementRoutes);
 // Stripe webhook (must be raw BEFORE json)
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
