@@ -24,92 +24,91 @@ router.get("/", authenticateToken, async (req, res) => {
         COALESCE(u.name,'User') AS name,
         u.email,
 
-        COUNT(DISTINCT s.id) AS total_shifts,
+        /* shifts worked */
+        (
+          SELECT COUNT(*)
+          FROM shifts s
+          WHERE s.user_id = u.id
+          AND s.company_id = $1
+        ) AS total_shifts,
 
-        COUNT(DISTINCT s.id) FILTER (
-          WHERE s.is_late = true
+        /* late shifts */
+        (
+          SELECT COUNT(*)
+          FROM shifts s
+          WHERE s.user_id = u.id
+          AND s.company_id = $1
+          AND s.is_late = true
         ) AS late_count,
 
-        COUNT(DISTINCT sch.id) FILTER (
-          WHERE sch.date < CURRENT_DATE
-          AND s.id IS NULL
+        /* missed schedules */
+        (
+          SELECT COUNT(*)
+          FROM schedules sch
+          WHERE sch.user_id = u.id
+          AND sch.company_id = $1
+          AND sch.date < CURRENT_DATE
+          AND NOT EXISTS (
+            SELECT 1
+            FROM shifts s
+            WHERE s.user_id = u.id
+            AND DATE(s.clock_in_time) = sch.date
+          )
         ) AS missed_shifts,
 
-        COALESCE(
-          SUM(
-            EXTRACT(
-              EPOCH FROM (
-                COALESCE(
-                  s.clock_out_time,
-                  NOW()
-                ) - s.clock_in_time
-              )
-            ) / 3600
-          ),
-          0
+        /* total worked hours */
+        (
+          SELECT COALESCE(
+            SUM(
+              EXTRACT(
+                EPOCH FROM (
+                  COALESCE(
+                    s.clock_out_time,
+                    NOW()
+                  ) - s.clock_in_time
+                )
+              ) / 3600
+            ),
+            0
+          )
+          FROM shifts s
+          WHERE s.user_id = u.id
+          AND s.company_id = $1
         ) AS hours_worked,
 
-        COALESCE(
-          (
-            SELECT COUNT(*)
-            FROM tasks t
-            WHERE t.user_id = u.id
-            AND (
-              t.completed = true
-              OR t.status = 'completed'
-            )
-          ),
-          0
+        /* completed tasks */
+        (
+          SELECT COUNT(*)
+          FROM tasks t
+          WHERE t.company_id = $1
+          AND (
+            t.assigned_to = u.id
+            OR t.user_id = u.id
+            OR t.created_by = u.id
+          )
+          AND (
+            t.completed = true
+            OR t.status = 'completed'
+          )
         ) AS completed_tasks
 
       FROM users u
-
-      LEFT JOIN shifts s
-        ON s.user_id = u.id
-        AND s.company_id = $1
-
-      LEFT JOIN schedules sch
-        ON sch.user_id = u.id
-        AND sch.company_id = $1
-
       WHERE u.company_id = $1
-
-      GROUP BY
-        u.id,
-        u.name,
-        u.email
-
-      ORDER BY u.name ASC
+      ORDER BY name ASC
       `,
       [companyId]
     );
 
     const data = result.rows.map((u) => {
-      const totalShifts = Number(
-        u.total_shifts || 0
-      );
-
-      const lateCount = Number(
-        u.late_count || 0
-      );
-
-      const missed = Number(
-        u.missed_shifts || 0
-      );
-
-      const completed = Number(
-        u.completed_tasks || 0
-      );
-
-      const hoursWorked = Number(
-        u.hours_worked || 0
-      );
+      const totalShifts = Number(u.total_shifts || 0);
+      const lateCount = Number(u.late_count || 0);
+      const missed = Number(u.missed_shifts || 0);
+      const completed = Number(u.completed_tasks || 0);
+      const hoursWorked = Number(u.hours_worked || 0);
 
       const latenessRate =
         totalShifts > 0
-          ? (lateCount /
-              totalShifts) *
-            100
+          ? (lateCount / totalShifts) * 100
           : 0;
 
       let reliability =
@@ -117,9 +116,7 @@ router.get("/", authenticateToken, async (req, res) => {
         latenessRate -
         missed * 10;
 
-      if (reliability < 0) {
-        reliability = 0;
-      }
+      if (reliability < 0) reliability = 0;
 
       let score =
         totalShifts * 8 +
@@ -135,33 +132,25 @@ router.get("/", authenticateToken, async (req, res) => {
         id: u.id,
         name: u.name,
         email: u.email,
-        total_shifts:
-          totalShifts,
-        late_count:
-          lateCount,
-        missed_shifts:
-          missed,
-        completed_tasks:
-          completed,
+        total_shifts: totalShifts,
+        late_count: lateCount,
+        missed_shifts: missed,
+        completed_tasks: completed,
         hours_worked: Number(
           hoursWorked.toFixed(1)
         ),
-        latenessRate:
-          Math.round(
-            latenessRate
-          ),
-        reliability:
-          Math.round(
-            reliability
-          ),
-        score:
-          Math.round(score),
+        latenessRate: Math.round(
+          latenessRate
+        ),
+        reliability: Math.round(
+          reliability
+        ),
+        score: Math.round(score),
       };
     });
 
     data.sort(
-      (a, b) =>
-        b.score - a.score
+      (a, b) => b.score - a.score
     );
 
     res.json(data);
