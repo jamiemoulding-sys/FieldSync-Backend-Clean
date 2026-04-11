@@ -1,13 +1,11 @@
 // 🔥 SUPABASE FIX (Headers issue)
 
 require("cross-fetch/polyfill");
+require("dotenv").config();
 
-const fetch = require("node-fetch");
-
-global.fetch = fetch;
-global.Headers = fetch.Headers;
-global.Request = fetch.Request;
-global.Response = fetch.Response;
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
 
 require("dotenv").config();
 
