@@ -1,4 +1,7 @@
 // 🔥 SUPABASE FIX (Headers issue)
+
+require("cross-fetch/polyfill");
+
 const fetch = require("node-fetch");
 
 global.fetch = fetch;
