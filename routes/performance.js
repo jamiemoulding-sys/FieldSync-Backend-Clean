@@ -5,7 +5,7 @@ const { query } = require("../database/connection");
 const { authenticateToken } = require("../middleware/auth");
 
 /* ===================================
-   📊 PERFORMANCE
+   📊 FULL SAFE PERFORMANCE ROUTE
 =================================== */
 router.get("/", authenticateToken, async (req, res) => {
   try {
@@ -24,7 +24,7 @@ router.get("/", authenticateToken, async (req, res) => {
         COALESCE(u.name,'User') AS name,
         u.email,
 
-        /* shifts worked */
+        /* total shifts */
         (
           SELECT COUNT(*)
           FROM shifts s
@@ -38,10 +38,10 @@ router.get("/", authenticateToken, async (req, res) => {
           FROM shifts s
           WHERE s.user_id = u.id
           AND s.company_id = $1
-          AND s.is_late = true
+          AND COALESCE(s.is_late,false) = true
         ) AS late_count,
 
-        /* missed schedules */
+        /* missed scheduled shifts */
         (
           SELECT COUNT(*)
           FROM schedules sch
@@ -56,7 +56,7 @@ router.get("/", authenticateToken, async (req, res) => {
           )
         ) AS missed_shifts,
 
-        /* total worked hours */
+        /* hours worked */
         (
           SELECT COALESCE(
             SUM(
@@ -76,20 +76,14 @@ router.get("/", authenticateToken, async (req, res) => {
           AND s.company_id = $1
         ) AS hours_worked,
 
-        /* completed tasks */
+        /* completed tasks SAFE */
         (
           SELECT COUNT(*)
-          FROM tasks t
-          WHERE t.company_id = $1
-          AND (
-            t.assigned_to = u.id
-            OR t.user_id = u.id
-            OR t.created_by = u.id
-          )
-          AND (
-            t.completed = true
-            OR t.status = 'completed'
-          )
+          FROM task_completions tc
+          INNER JOIN tasks t
+            ON t.id = tc.task_id
+          WHERE tc.user_id = u.id
+          AND t.company_id = $1
         ) AS completed_tasks
 
       FROM users u
@@ -154,6 +148,7 @@ router.get("/", authenticateToken, async (req, res) => {
     );
 
     res.json(data);
+
   } catch (err) {
     console.error(
       "PERFORMANCE ERROR:",

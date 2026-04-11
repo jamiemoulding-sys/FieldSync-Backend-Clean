@@ -4,13 +4,14 @@ const router = express.Router();
 const { query } = require("../database/connection");
 const { authenticateToken } = require("../middleware/auth");
 
-/*
-========================================
-🔒 ADMIN ONLY CHECK
-========================================
-*/
-function adminOnly(req, res) {
-  if (!req.user || req.user.role !== "admin") {
+/* ========================================
+   🔒 SAFE ADMIN / MANAGER ACCESS
+======================================== */
+function allowReports(req, res) {
+  if (
+    !req.user ||
+    !["admin", "manager"].includes(req.user.role)
+  ) {
     res.status(403).json({
       error: "Forbidden",
     });
@@ -20,15 +21,13 @@ function adminOnly(req, res) {
   return true;
 }
 
-/*
-========================================
-📊 REPORT SUMMARY
-GET /api/reports
-========================================
-*/
+/* ========================================
+   📊 REPORT SUMMARY
+   GET /api/reports
+======================================== */
 router.get("/", authenticateToken, async (req, res) => {
   try {
-    if (!adminOnly(req, res)) return;
+    if (!allowReports(req, res)) return;
 
     const companyId = req.user.companyId;
 
@@ -42,48 +41,49 @@ router.get("/", authenticateToken, async (req, res) => {
     ] = await Promise.all([
       query(
         `
-        SELECT COUNT(*) 
+        SELECT COUNT(*) AS count
         FROM shifts
         WHERE company_id = $1
-      `,
+        `,
         [companyId]
       ),
 
       query(
         `
-        SELECT COUNT(*) 
+        SELECT COUNT(*) AS count
         FROM users
         WHERE company_id = $1
-      `,
+        `,
         [companyId]
       ),
 
       query(
         `
-        SELECT COUNT(*)
+        SELECT COUNT(*) AS count
         FROM tasks
         WHERE company_id = $1
-      `,
+        `,
         [companyId]
       ),
 
       query(
         `
-        SELECT COUNT(*)
-        FROM tasks
-        WHERE company_id = $1
-        AND completed = true
-      `,
+        SELECT COUNT(*) AS count
+        FROM task_completions tc
+        JOIN tasks t
+          ON t.id = tc.task_id
+        WHERE t.company_id = $1
+        `,
         [companyId]
       ),
 
       query(
         `
-        SELECT COUNT(DISTINCT user_id)
+        SELECT COUNT(DISTINCT user_id) AS count
         FROM shifts
         WHERE company_id = $1
         AND DATE(clock_in_time) = CURRENT_DATE
-      `,
+        `,
         [companyId]
       ),
 
@@ -98,19 +98,26 @@ router.get("/", authenticateToken, async (req, res) => {
                 )
               ) / 3600
             )
-          ),0
+          ),
+          0
         ) AS total
         FROM shifts
         WHERE company_id = $1
-      `,
+        `,
         [companyId]
       ),
     ]);
 
     res.json({
-      totalShifts: Number(shiftsRes.rows[0].count),
-      totalUsers: Number(usersRes.rows[0].count),
-      totalTasks: Number(tasksRes.rows[0].count),
+      totalShifts: Number(
+        shiftsRes.rows[0].count
+      ),
+      totalUsers: Number(
+        usersRes.rows[0].count
+      ),
+      totalTasks: Number(
+        tasksRes.rows[0].count
+      ),
       completedTasks: Number(
         completedTasksRes.rows[0].count
       ),
@@ -121,8 +128,12 @@ router.get("/", authenticateToken, async (req, res) => {
         hoursWorkedRes.rows[0].total
       ),
     });
+
   } catch (error) {
-    console.error("Reports error:", error);
+    console.error(
+      "REPORTS ERROR:",
+      error
+    );
 
     res.status(500).json({
       error: error.message,
@@ -130,52 +141,57 @@ router.get("/", authenticateToken, async (req, res) => {
   }
 });
 
-/*
-========================================
-📄 TIMESHEETS
-GET /api/reports/timesheets
-========================================
-*/
+/* ========================================
+   📄 TIMESHEETS
+   GET /api/reports/timesheets
+======================================== */
 router.get(
   "/timesheets",
   authenticateToken,
   async (req, res) => {
     try {
-      if (!adminOnly(req, res)) return;
+      if (!allowReports(req, res)) return;
 
-      const companyId = req.user.companyId;
+      const companyId =
+        req.user.companyId;
 
       const result = await query(
         `
         SELECT
-          users.name,
-          users.email,
-          shifts.clock_in_time,
-          shifts.clock_out_time,
+          u.name,
+          u.email,
+          s.clock_in_time,
+          s.clock_out_time,
+
           ROUND(
             EXTRACT(
               EPOCH FROM (
                 COALESCE(
-                  shifts.clock_out_time,
+                  s.clock_out_time,
                   NOW()
-                ) - shifts.clock_in_time
+                ) - s.clock_in_time
               )
-            ) / 3600, 2
+            ) / 3600,
+            2
           ) AS hours
-        FROM shifts
-        JOIN users
-          ON users.id = shifts.user_id
-        WHERE shifts.company_id = $1
-        ORDER BY shifts.clock_in_time DESC
+
+        FROM shifts s
+        JOIN users u
+          ON u.id = s.user_id
+
+        WHERE s.company_id = $1
+
+        ORDER BY s.clock_in_time DESC
         LIMIT 200
-      `,
+        `,
         [companyId]
       );
 
       res.json(result.rows);
+
     } catch (error) {
       console.error(
-        "Timesheet error:",
+        "TIMESHEETS ERROR:",
         error
       );
 
