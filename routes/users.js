@@ -1,323 +1,291 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { body, validationResult } = require('express-validator');
-const { query } = require('../database/connection');
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { body, validationResult } = require("express-validator");
+const { query } = require("../database/connection");
 
 const {
   authenticateToken,
   requireRole,
-  requireCompany
-} = require('../middleware/auth');
+  requireCompany,
+} = require("../middleware/auth");
 
 const router = express.Router();
 
 //
-// =======================
-// 🔐 LOGIN
-// =======================
-router.post('/login', async (req, res) => {
-  try {
-    console.log("🔥 LOGIN HIT");
+// ====================================
+// 🔐 TOKEN BUILDER
+// ====================================
+function createToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      companyId: user.company_id,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+}
 
+//
+// ====================================
+// 🔐 LOGIN
+// ====================================
+router.post("/login", async (req, res) => {
+  try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({
+        error: "Email and password required",
+      });
+    }
+
     const result = await query(
-      'SELECT * FROM users WHERE email = $1',
+      "SELECT * FROM users WHERE email = $1",
       [email]
     );
 
     const user = result.rows[0];
 
-    console.log("USER:", user);
-
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({
+        error: "Invalid credentials",
+      });
     }
 
-    if (!user.password) {
-      return res.status(500).json({ error: 'User has no password set' });
-    }
-
-    const validPassword = await require('bcryptjs').compare(
+    const valid = await bcrypt.compare(
       password,
       user.password
     );
 
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    if (!valid) {
+      return res.status(401).json({
+        error: "Invalid credentials",
+      });
     }
 
-    const token = require('jsonwebtoken').sign(
-      {
+    const token = createToken(user);
+
+    res.json({
+      token,
+      user: {
         id: user.id,
         email: user.email,
+        name: user.name || "",
+        phone: user.phone || "",
         role: user.role,
-        companyId: user.company_id
+        companyId: user.company_id,
+        isPro: user.is_pro || false,
       },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+    });
+  } catch (error) {
+    console.error(
+      "LOGIN ERROR:",
+      error
     );
 
-    res.json({ token });
-
-  } catch (error) {
-    console.error("💥 LOGIN CRASH:", error);
-
     res.status(500).json({
-      error: error.message,
-      stack: error.stack
+      error: "Login failed",
     });
   }
 });
 
 //
-// =======================
-// 🧾 REGISTER (ADMIN ONLY)
-// =======================
-router.post('/register',
-  authenticateToken,
-  requireRole('admin'),
-  requireCompany,
-  [
-    body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 6 }),
-    body('name').trim().isLength({ min: 2 }),
-    body('role').isIn(['admin', 'manager', 'employee'])
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
+// ====================================
+// 🆕 REGISTER (PUBLIC FIRST USER)
+// ====================================
+router.post("/register", async (req, res) => {
+  try {
+    const {
+      email,
+      password,
+      name,
+      companyName,
+    } = req.body;
 
-      const { email, password, name, role } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({
+        error: "Missing fields",
+      });
+    }
 
-      const existingUser = await query(
-        'SELECT id FROM users WHERE email = $1',
-        [email]
+    const existing = await query(
+      "SELECT id FROM users WHERE email = $1",
+      [email]
+    );
+
+    if (existing.rows.length) {
+      return res.status(400).json({
+        error: "Email already exists",
+      });
+    }
+
+    const hashed =
+      await bcrypt.hash(
+        password,
+        10
       );
 
-      if (existingUser.rows.length > 0) {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      const result = await query(
-        `INSERT INTO users (email, password, name, role, company_id)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, email, name, role, company_id`,
-        [email, hashedPassword, name, role, req.user.companyId]
-      );
-
+    const companyRes =
       await query(
-        `INSERT INTO activity_logs (company_id, user_id, action)
-         VALUES ($1, $2, $3)`,
+        `
+        INSERT INTO companies (name)
+        VALUES ($1)
+        RETURNING *
+      `,
         [
-          req.user.companyId,
-          req.user.id,
-          `Created user ${email} with role ${role}`
+          companyName ||
+            "My Company",
         ]
       );
 
-      res.status(201).json({
-        user: result.rows[0],
-        message: 'User created successfully'
-      });
+    const company =
+      companyRes.rows[0];
 
-    } catch (error) {
-      console.error('Registration error:', error);
-      res.status(500).json({
-        error: "REAL_ERROR",
-        message: error.message
-      });
-    }
-  }
-);
-
-//
-// =======================
-// 👥 GET USERS
-// =======================
-router.get('/',
-  authenticateToken,
-  requireCompany,
-  async (req, res) => {
-    try {
-      const result = await query(`
-        SELECT id, name, email, role, temp_role, temp_role_expires
-        FROM users
-        WHERE company_id = $1
-        ORDER BY name ASC
-      `, [req.user.companyId]);
-
-      res.json(result.rows);
-
-    } catch (error) {
-      console.error('Get users error:', error);
-      res.status(500).json({ error: 'Failed to fetch users' });
-    }
-  }
-);
-
-//
-// =======================
-// 🔥 UPDATE ROLE (PERMANENT)
-// =======================
-router.put('/:id/role',
-  authenticateToken,
-  requireCompany,
-  requireRole('manager', 'admin'),
-  async (req, res) => {
-    try {
-      const { role } = req.body;
-
-      if (!['employee', 'manager', 'admin'].includes(role)) {
-        return res.status(400).json({ error: 'Invalid role' });
-      }
-
-      // ❌ prevent self-edit
-      if (req.user.id === req.params.id) {
-        return res.status(400).json({
-          error: 'You cannot change your own role'
-        });
-      }
-
-      if (req.user.role === 'manager' && role === 'admin') {
-        return res.status(403).json({
-          error: 'Managers cannot assign admin role'
-        });
-      }
-
+    const userRes =
       await query(
-        `UPDATE users
-         SET role = $1
-         WHERE id = $2 AND company_id = $3`,
-        [role, req.params.id, req.user.companyId]
-      );
-
-      await query(
-        `INSERT INTO activity_logs (company_id, user_id, action)
-         VALUES ($1, $2, $3)`,
+        `
+        INSERT INTO users
+        (email,password,name,role,company_id)
+        VALUES ($1,$2,$3,$4,$5)
+        RETURNING *
+      `,
         [
-          req.user.companyId,
-          req.user.id,
-          `Changed role of user ${req.params.id} to ${role}`
+          email,
+          hashed,
+          name || "Owner",
+          "admin",
+          company.id,
         ]
       );
 
-      res.json({ message: 'Role updated successfully' });
+    const user =
+      userRes.rows[0];
 
-    } catch (error) {
-      console.error('Role update error:', error);
-      res.status(500).json({ error: 'Failed to update role' });
-    }
+    const token =
+      createToken(user);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        companyId:
+          user.company_id,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "REGISTER ERROR:",
+      error
+    );
+
+    res.status(500).json({
+      error:
+        "Registration failed",
+    });
   }
-);
+});
 
 //
-// =======================
-// 🔁 TEMP ROLE (HOLIDAY COVER)
-// =======================
-router.put('/:id/temp-role',
+// ====================================
+// 👤 GET PROFILE
+// ====================================
+router.get(
+  "/me",
   authenticateToken,
-  requireCompany,
-  requireRole('manager', 'admin'),
   async (req, res) => {
     try {
-      const { role, expiresAt } = req.body;
-
-      // ✅ REMOVE TEMP ROLE
-      if (!role) {
+      const result =
         await query(
-          `UPDATE users
-           SET temp_role = NULL,
-               temp_role_expires = NULL
-           WHERE id = $1 AND company_id = $2`,
-          [req.params.id, req.user.companyId]
+          `
+        SELECT
+          id,email,name,phone,
+          role,company_id,is_pro
+        FROM users
+        WHERE id = $1
+      `,
+          [req.user.id]
         );
 
-        return res.json({ message: 'Temporary role removed' });
-      }
-
-      if (!['manager', 'admin'].includes(role)) {
-        return res.status(400).json({
-          error: 'Invalid temp role'
-        });
-      }
-
-      if (!expiresAt) {
-        return res.status(400).json({
-          error: 'Expiry date required'
-        });
-      }
-
-      if (req.user.role === 'manager' && role === 'admin') {
-        return res.status(403).json({
-          error: 'Managers cannot assign admin role'
-        });
-      }
-
-      await query(
-        `UPDATE users
-         SET temp_role = $1,
-             temp_role_expires = $2
-         WHERE id = $3 AND company_id = $4`,
-        [role, expiresAt, req.params.id, req.user.companyId]
+      res.json(
+        result.rows[0]
       );
-
-      await query(
-        `INSERT INTO activity_logs (company_id, user_id, action)
-         VALUES ($1, $2, $3)`,
-        [
-          req.user.companyId,
-          req.user.id,
-          `Temporary role ${role} assigned to user ${req.params.id}`
-        ]
-      );
-
-      res.json({ message: 'Temporary role assigned' });
-
     } catch (error) {
-      console.error('Temp role error:', error);
-      res.status(500).json({ error: 'Failed to assign temp role' });
+      res.status(500).json({
+        error:
+          "Failed to load profile",
+      });
     }
   }
 );
 
 //
-// =======================
-// ❌ DELETE USER (ADMIN ONLY)
-// =======================
-router.delete('/:id',
+// ====================================
+// ✏️ UPDATE PROFILE
+// ====================================
+router.put(
+  "/me",
   authenticateToken,
-  requireRole('admin'),
-  requireCompany,
   async (req, res) => {
     try {
-      await query(
-        `DELETE FROM users
-         WHERE id = $1 AND company_id = $2`,
-        [req.params.id, req.user.companyId]
+      const {
+        name,
+        phone,
+        companyName,
+      } = req.body;
+
+      const result =
+        await query(
+          `
+        UPDATE users
+        SET
+          name = $1,
+          phone = $2
+        WHERE id = $3
+        RETURNING
+          id,email,name,phone,
+          role,company_id,is_pro
+      `,
+          [
+            name || "",
+            phone || "",
+            req.user.id,
+          ]
+        );
+
+      if (companyName) {
+        await query(
+          `
+          UPDATE companies
+          SET name = $1
+          WHERE id = $2
+        `,
+          [
+            companyName,
+            req.user.companyId,
+          ]
+        );
+      }
+
+      res.json(
+        result.rows[0]
       );
-
-      await query(
-        `INSERT INTO activity_logs (company_id, user_id, action)
-         VALUES ($1, $2, $3)`,
-        [
-          req.user.companyId,
-          req.user.id,
-          `Deleted user ${req.params.id}`
-        ]
-      );
-
-      res.json({ message: 'User deleted' });
-
     } catch (error) {
-      console.error('Delete user error:', error);
-      res.status(500).json({ error: 'Failed to delete user' });
+      console.error(
+        "PROFILE UPDATE ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        error:
+          "Failed to save profile",
+      });
     }
   }
 );

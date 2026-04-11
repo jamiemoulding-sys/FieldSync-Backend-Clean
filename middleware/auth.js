@@ -1,62 +1,83 @@
-const jwt = require('jsonwebtoken');
-const { query } = require('../database/connection');
+const jwt = require("jsonwebtoken");
+const { query } = require("../database/connection");
 
 //
-// =======================
-// 🔐 AUTH MIDDLEWARE
-// =======================
+// ===================================
+// 🔐 FULL FIX AUTH MIDDLEWARE
+// ===================================
+
 const authenticateToken = async (req, res, next) => {
   try {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
-        error: "No valid authorization header"
+        error: "No token provided",
       });
     }
 
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.split(" ")[1];
 
     if (!token || token === "undefined" || token === "null") {
       return res.status(401).json({
-        error: "Invalid token"
+        error: "Invalid token",
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // VERIFY TOKEN
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
 
-    // 🔥 ALWAYS FETCH USER FROM DB (FOR LIVE ROLE + TEMP ROLE)
+    // GET LIVE USER DATA
     const result = await query(
-      `SELECT id, email, role, company_id, temp_role, temp_role_expires
-       FROM users
-       WHERE id = $1`,
+      `
+      SELECT
+        id,
+        email,
+        name,
+        role,
+        company_id,
+        is_pro,
+        temp_role,
+        temp_role_expires
+      FROM users
+      WHERE id = $1
+      `,
       [decoded.id]
     );
 
     const user = result.rows[0];
 
     if (!user) {
-      return res.status(401).json({ error: "User not found" });
+      return res.status(401).json({
+        error: "User not found",
+      });
     }
 
-    let finalRole = user.role;
+    let finalRole = user.role || "employee";
 
-    // =======================
-    // 🔁 TEMP ROLE OVERRIDE
-    // =======================
-    if (user.temp_role && user.temp_role_expires) {
+    // TEMP ROLE SUPPORT
+    if (
+      user.temp_role &&
+      user.temp_role_expires
+    ) {
       const now = new Date();
-      const expiry = new Date(user.temp_role_expires);
+      const expiry = new Date(
+        user.temp_role_expires
+      );
 
       if (expiry > now) {
         finalRole = user.temp_role;
       } else {
-        // 🧹 AUTO CLEANUP EXPIRED TEMP ROLE
         await query(
-          `UPDATE users
-           SET temp_role = NULL,
-               temp_role_expires = NULL
-           WHERE id = $1`,
+          `
+          UPDATE users
+          SET temp_role = NULL,
+              temp_role_expires = NULL
+          WHERE id = $1
+          `,
           [user.id]
         );
       }
@@ -65,50 +86,64 @@ const authenticateToken = async (req, res, next) => {
     req.user = {
       id: user.id,
       email: user.email,
+      name: user.name,
+      role: finalRole,
       companyId: user.company_id,
-      role: finalRole
+      isPro: user.is_pro || false,
     };
 
     next();
-
   } catch (err) {
-    console.error("💥 JWT ERROR:", err.message);
+    console.error(
+      "AUTH ERROR:",
+      err.message
+    );
 
-    return res.status(403).json({
-      error: "Invalid token",
-      message: err.message
+    if (
+      err.name === "TokenExpiredError" ||
+      err.name === "JsonWebTokenError"
+    ) {
+      return res.status(401).json({
+        error: "Session expired",
+      });
+    }
+
+    return res.status(500).json({
+      error: "Authentication failed",
     });
   }
 };
 
 //
-// =======================
-// 👑 ROLE CHECK (HIERARCHY)
-// =======================
+// ===================================
+// 👑 ROLE ACCESS
+// ===================================
+
 const requireRole = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
-    const hierarchy = {
+    const levels = {
       employee: 1,
       manager: 2,
-      admin: 3
+      admin: 3,
     };
 
-    const userLevel = hierarchy[req.user.role] || 0;
+    const userLevel =
+      levels[req.user.role] || 0;
 
-    const allowed = roles.some(role => {
-      return userLevel >= hierarchy[role];
-    });
+    const allowed = roles.some(
+      (role) =>
+        userLevel >= levels[role]
+    );
 
     if (!allowed) {
       return res.status(403).json({
         error: "Forbidden",
-        message: `Requires role: ${roles.join(', ')}`
       });
     }
 
@@ -117,13 +152,21 @@ const requireRole = (...roles) => {
 };
 
 //
-// =======================
+// ===================================
 // 🏢 COMPANY CHECK
-// =======================
-const requireCompany = (req, res, next) => {
-  if (!req.user || !req.user.companyId) {
+// ===================================
+
+const requireCompany = (
+  req,
+  res,
+  next
+) => {
+  if (
+    !req.user ||
+    !req.user.companyId
+  ) {
     return res.status(403).json({
-      error: "No company assigned"
+      error: "No company assigned",
     });
   }
 
@@ -133,5 +176,5 @@ const requireCompany = (req, res, next) => {
 module.exports = {
   authenticateToken,
   requireRole,
-  requireCompany
+  requireCompany,
 };
