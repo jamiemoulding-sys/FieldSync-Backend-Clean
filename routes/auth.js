@@ -21,6 +21,7 @@ function createToken(user) {
       email: user.email,
       companyId:
         user.company_id || null,
+
       role:
         user.role ||
         "employee",
@@ -28,23 +29,32 @@ function createToken(user) {
       /* billing */
       isPro:
         user.is_pro || false,
+
       is_pro:
         user.is_pro || false,
+
       current_plan:
-        user.current_plan || null,
+        user.current_plan ||
+        "free",
+
       subscription_status:
         user.subscription_status ||
-        null,
+        "free",
 
       /* profile */
       name:
         user.name || "",
+
       phone:
         user.phone || "",
+
       companyName:
-        user.company_name || "",
+        user.company_name ||
+        "",
+
       jobTitle:
-        user.job_title || "",
+        user.job_title ||
+        "",
     },
     process.env.JWT_SECRET,
     {
@@ -88,12 +98,12 @@ router.post(
             u.phone,
             u.role,
             u.company_id,
-            u.is_pro,
             u.job_title,
 
-            c.name AS company_name,
-            c.current_plan,
-            c.subscription_status
+            COALESCE(c.name,'') AS company_name,
+            COALESCE(c.is_pro,false) AS is_pro,
+            COALESCE(c.current_plan,'free') AS current_plan,
+            COALESCE(c.subscription_status,'free') AS subscription_status
 
           FROM users u
           LEFT JOIN companies c
@@ -142,11 +152,9 @@ router.post(
           email:
             user.email,
           name:
-            user.name ||
-            "",
+            user.name || "",
           phone:
-            user.phone ||
-            "",
+            user.phone || "",
           role:
             user.role ||
             "employee",
@@ -155,36 +163,26 @@ router.post(
             user.company_id,
 
           companyName:
-            user.company_name ||
-            "",
+            user.company_name,
 
           jobTitle:
             user.job_title ||
             "",
 
           isPro:
-            user.is_pro ||
-            false,
+            user.is_pro,
 
           is_pro:
-            user.is_pro ||
-            false,
+            user.is_pro,
 
           current_plan:
-            user.current_plan ||
-            null,
+            user.current_plan,
 
           subscription_status:
-            user.subscription_status ||
-            null,
+            user.subscription_status,
         },
       });
     } catch (error) {
-      console.error(
-        "LOGIN ERROR:",
-        error
-      );
-
       res.status(500).json({
         error:
           error.message,
@@ -256,7 +254,13 @@ router.post(
             current_plan,
             subscription_status
           )
-          VALUES ($1,false,NULL,'free')
+          VALUES
+          (
+            $1,
+            false,
+            'free',
+            'free'
+          )
           RETURNING *
           `,
           [
@@ -277,10 +281,12 @@ router.post(
             password,
             name,
             company_id,
-            role,
-            is_pro
+            role
           )
-          VALUES ($1,$2,$3,$4,'admin',false)
+          VALUES
+          (
+            $1,$2,$3,$4,'admin'
+          )
           RETURNING *
           `,
           [
@@ -294,8 +300,11 @@ router.post(
 
       const user =
         userRes.rows[0];
+
       user.company_name =
         company.name;
+
+      user.is_pro = false;
       user.current_plan =
         "free";
       user.subscription_status =
@@ -327,11 +336,6 @@ router.post(
         },
       });
     } catch (error) {
-      console.error(
-        "REGISTER ERROR:",
-        error
-      );
-
       res.status(500).json({
         error:
           error.message,
@@ -341,7 +345,7 @@ router.post(
 );
 
 /* =====================================
-   GET PROFILE / REFRESH USER
+   GET PROFILE / REFRESH
 ===================================== */
 router.get(
   "/me",
@@ -358,10 +362,10 @@ router.get(
             COALESCE(u.phone,'') AS phone,
             COALESCE(u.role,'employee') AS role,
             u.company_id,
-            COALESCE(u.is_pro,false) AS is_pro,
             COALESCE(u.job_title,'') AS job_title,
 
             COALESCE(c.name,'') AS company_name,
+            COALESCE(c.is_pro,false) AS is_pro,
             COALESCE(c.current_plan,'free') AS current_plan,
             COALESCE(c.subscription_status,'free') AS subscription_status
 
@@ -395,11 +399,6 @@ router.get(
           user.is_pro,
       });
     } catch (error) {
-      console.error(
-        "GET PROFILE ERROR:",
-        error
-      );
-
       res.status(500).json({
         error:
           error.message,
@@ -457,68 +456,6 @@ router.put(
           ]
         );
       }
-
-      return res.json({
-        success: true,
-      });
-    } catch (error) {
-      res.status(500).json({
-        error:
-          error.message,
-      });
-    }
-  }
-);
-
-/* =====================================
-   TEST ACCESS CODE
-===================================== */
-router.post(
-  "/apply-code",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const { code } =
-        req.body;
-
-      if (
-        code !==
-        "FULLACCESS2026"
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Invalid code",
-          });
-      }
-
-      await query(
-        `
-        UPDATE companies
-        SET
-          is_pro = true,
-          current_plan = 'business',
-          subscription_status = 'active'
-        WHERE id = $1
-        `,
-        [
-          req.user
-            .companyId,
-        ]
-      );
-
-      await query(
-        `
-        UPDATE users
-        SET is_pro = true
-        WHERE company_id = $1
-        `,
-        [
-          req.user
-            .companyId,
-        ]
-      );
 
       res.json({
         success: true,

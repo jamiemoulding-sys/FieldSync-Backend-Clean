@@ -15,7 +15,7 @@ const { query } = require(
 );
 
 /* ==========================================
-   PRICE IDS (SET IN RENDER ENV)
+   PRICE IDS
 ========================================== */
 
 const PRICES = {
@@ -51,14 +51,16 @@ const PRICES = {
 const PLAN_RULES = {
   starter: {
     included: 5,
-    basePrice: PRICES.starter,
+    basePrice:
+      PRICES.starter,
     extraPrice:
       PRICES.extraStarter,
   },
 
   pro: {
     included: 10,
-    basePrice: PRICES.pro,
+    basePrice:
+      PRICES.pro,
     extraPrice:
       PRICES.extraPro,
   },
@@ -96,7 +98,6 @@ router.post(
       const userId =
         req.user.id;
 
-      /* get user + company */
       const userRes =
         await query(
           `
@@ -109,6 +110,7 @@ router.post(
           LEFT JOIN companies c
           ON c.id = u.company_id
           WHERE u.id = $1
+          LIMIT 1
           `,
           [userId]
         );
@@ -132,7 +134,6 @@ router.post(
         });
       }
 
-      /* count staff */
       const staffRes =
         await query(
           `
@@ -146,7 +147,7 @@ router.post(
       const staffCount =
         Number(
           staffRes.rows[0]
-            .total
+            ?.total
         ) || 1;
 
       const rules =
@@ -196,6 +197,11 @@ router.post(
             line_items:
               lineItems,
 
+            subscription_data:
+              {
+                trial_period_days: 14,
+              },
+
             metadata: {
               userId:
                 String(
@@ -212,9 +218,9 @@ router.post(
                 ),
             },
 
-            success_url: `${frontend}/billing-success?session_id={CHECKOUT_SESSION_ID}`,
+            success_url: `${frontend}/success?session_id={CHECKOUT_SESSION_ID}`,
 
-            cancel_url: `${frontend}/upgrade`,
+            cancel_url: `${frontend}/billing`,
           }
         );
 
@@ -275,9 +281,11 @@ router.post(
           {
             customer:
               customerId,
+
             return_url:
               process.env
-                .FRONTEND_URL,
+                .FRONTEND_URL ||
+              "https://app.zorviatech.co.uk",
           }
         );
 
@@ -318,7 +326,7 @@ router.post(
             .STRIPE_WEBHOOK_SECRET
         );
 
-      /* checkout complete */
+      /* CHECKOUT COMPLETE */
       if (
         event.type ===
         "checkout.session.completed"
@@ -332,9 +340,10 @@ router.post(
           SET
             stripe_customer_id = $1,
             stripe_subscription_id = $2,
-            subscription_status = 'active',
+            subscription_status = 'trialing',
             current_plan = $3,
-            is_pro = true
+            is_pro = true,
+            trial_ends_at = NOW() + INTERVAL '14 days'
           WHERE id = $4
           `,
           [
@@ -348,7 +357,29 @@ router.post(
         );
       }
 
-      /* cancelled */
+      /* SUB UPDATED */
+      if (
+        event.type ===
+        "customer.subscription.updated"
+      ) {
+        const sub =
+          event.data.object;
+
+        await query(
+          `
+          UPDATE companies
+          SET
+            subscription_status = $1
+          WHERE stripe_subscription_id = $2
+          `,
+          [
+            sub.status,
+            sub.id,
+          ]
+        );
+      }
+
+      /* CANCELLED */
       if (
         event.type ===
         "customer.subscription.deleted"
@@ -361,7 +392,8 @@ router.post(
           UPDATE companies
           SET
             subscription_status = 'cancelled',
-            is_pro = false
+            is_pro = false,
+            current_plan = 'free'
           WHERE stripe_subscription_id = $1
           `,
           [sub.id]
