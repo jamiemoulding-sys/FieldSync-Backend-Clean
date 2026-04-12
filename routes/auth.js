@@ -26,7 +26,6 @@ function createToken(user) {
         user.role ||
         "employee",
 
-      /* billing */
       isPro:
         user.is_pro || false,
 
@@ -41,7 +40,6 @@ function createToken(user) {
         user.subscription_status ||
         "free",
 
-      /* profile */
       name:
         user.name || "",
 
@@ -345,7 +343,74 @@ router.post(
 );
 
 /* =====================================
-   GET PROFILE / REFRESH
+   🔥 INVITE PASSWORD SYNC FIX
+===================================== */
+router.post(
+  "/set-password",
+  async (req, res) => {
+    try {
+      const {
+        email,
+        password,
+      } = req.body;
+
+      if (
+        !email ||
+        !password
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Missing fields",
+          });
+      }
+
+      const hashed =
+        await bcrypt.hash(
+          password,
+          10
+        );
+
+      const result =
+        await query(
+          `
+          UPDATE users
+          SET password = $1
+          WHERE LOWER(email)=LOWER($2)
+          RETURNING id,email
+          `,
+          [
+            hashed,
+            email,
+          ]
+        );
+
+      if (
+        !result.rows.length
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found",
+          });
+      }
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      res.status(500).json({
+        error:
+          error.message,
+      });
+    }
+  }
+);
+
+/* =====================================
+   GET PROFILE
 ===================================== */
 router.get(
   "/me",
