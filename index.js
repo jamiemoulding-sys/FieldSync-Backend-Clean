@@ -7,7 +7,6 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 
-
 /* ROUTES */
 const authRoutes = require("./routes/auth");
 const shiftRoutes = require("./routes/shifts");
@@ -27,6 +26,7 @@ const inviteRoutes = require("./routes/invite");
 const announcementRoutes = require("./routes/announcements");
 
 const app = express();
+
 const PORT =
   process.env.PORT || 10000;
 
@@ -39,10 +39,11 @@ app.set(
 );
 
 /* =====================
-   CORS
+   CORS FIXED
 ===================== */
 const allowedOrigins = [
   "https://app.zorviatech.co.uk",
+  "https://www.app.zorviatech.co.uk",
   "http://localhost:3000",
 ];
 
@@ -85,18 +86,29 @@ app.use(
     allowedHeaders: [
       "Content-Type",
       "Authorization",
+      "apikey",
+      "x-client-info",
+      "Prefer",
+    ],
+
+    exposedHeaders: [
+      "Content-Range",
+      "X-Total-Count",
     ],
   })
 );
 
+/* PRE-FLIGHT */
 app.options(
   "*",
   cors()
 );
 
 /* =====================
-   WEBHOOK FIRST
+   BODY PARSER
 ===================== */
+
+/* STRIPE WEBHOOK RAW FIRST */
 app.use(
   "/api/billing/webhook",
   express.raw({
@@ -104,9 +116,6 @@ app.use(
   })
 );
 
-/* =====================
-   BODY PARSER
-===================== */
 app.use(
   express.json({
     limit: "10mb",
@@ -116,11 +125,12 @@ app.use(
 app.use(
   express.urlencoded({
     extended: true,
+    limit: "10mb",
   })
 );
 
 /* =====================
-   STATIC FILES
+   STATIC
 ===================== */
 app.use(
   "/uploads",
@@ -146,6 +156,9 @@ app.get(
         process.env
           .NODE_ENV ||
         "development",
+      timestamp:
+        new Date()
+          .toISOString(),
     });
   }
 );
@@ -153,6 +166,7 @@ app.get(
 /* =====================
    API ROUTES
 ===================== */
+
 app.use(
   "/api/auth",
   authRoutes
@@ -234,6 +248,18 @@ app.use(
 );
 
 /* =====================
+   ROOT
+===================== */
+app.get(
+  "/",
+  (req, res) => {
+    res.send(
+      "🚀 Zorvia API Running"
+    );
+  }
+);
+
+/* =====================
    404
 ===================== */
 app.use(
@@ -247,7 +273,7 @@ app.use(
 );
 
 /* =====================
-   ERROR HANDLER
+   GLOBAL ERROR HANDLER
 ===================== */
 app.use(
   (
@@ -257,7 +283,7 @@ app.use(
     next
   ) => {
     console.error(
-      "💥 ERROR:",
+      "💥 SERVER ERROR:",
       err
     );
 
@@ -272,7 +298,7 @@ app.use(
 );
 
 /* =====================
-   START
+   START SERVER
 ===================== */
 app.listen(
   PORT,

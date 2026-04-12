@@ -19,6 +19,7 @@ function createToken(user) {
     {
       id: user.id,
       email: user.email,
+
       companyId:
         user.company_id || null,
 
@@ -97,6 +98,7 @@ router.post(
             u.role,
             u.company_id,
             u.job_title,
+            u.last_sign_in,
 
             COALESCE(c.name,'') AS company_name,
             COALESCE(c.is_pro,false) AS is_pro,
@@ -140,6 +142,19 @@ router.post(
           });
       }
 
+      /* UPDATE LAST SIGN IN */
+      await query(
+        `
+        UPDATE users
+        SET last_sign_in = NOW()
+        WHERE id = $1
+        `,
+        [user.id]
+      );
+
+      user.last_sign_in =
+        new Date();
+
       const token =
         createToken(user);
 
@@ -149,10 +164,13 @@ router.post(
           id: user.id,
           email:
             user.email,
+
           name:
             user.name || "",
+
           phone:
             user.phone || "",
+
           role:
             user.role ||
             "employee",
@@ -178,6 +196,9 @@ router.post(
 
           subscription_status:
             user.subscription_status,
+
+          last_sign_in:
+            user.last_sign_in,
         },
       });
     } catch (error) {
@@ -278,12 +299,14 @@ router.post(
             email,
             password,
             name,
+            phone,
             company_id,
-            role
+            role,
+            last_sign_in
           )
           VALUES
           (
-            $1,$2,$3,$4,'admin'
+            $1,$2,$3,'',$4,'admin',NOW()
           )
           RETURNING *
           `,
@@ -317,20 +340,32 @@ router.post(
           id: user.id,
           email:
             user.email,
+
           name:
             user.name,
+
+          phone:
+            user.phone || "",
+
           role: "admin",
+
           companyId:
             company.id,
+
           companyName:
             company.name,
 
           isPro: false,
           is_pro: false,
+
           current_plan:
             "free",
+
           subscription_status:
             "free",
+
+          last_sign_in:
+            user.last_sign_in,
         },
       });
     } catch (error) {
@@ -343,7 +378,7 @@ router.post(
 );
 
 /* =====================================
-   🔥 INVITE PASSWORD SYNC FIX
+   SET PASSWORD (INVITES)
 ===================================== */
 router.post(
   "/set-password",
@@ -428,6 +463,7 @@ router.get(
             COALESCE(u.role,'employee') AS role,
             u.company_id,
             COALESCE(u.job_title,'') AS job_title,
+            u.last_sign_in,
 
             COALESCE(c.name,'') AS company_name,
             COALESCE(c.is_pro,false) AS is_pro,
@@ -487,22 +523,24 @@ router.put(
         jobTitle,
       } = req.body;
 
-      await query(
-        `
-        UPDATE users
-        SET
-          name = $1,
-          phone = $2,
-          job_title = $3
-        WHERE id = $4
-        `,
-        [
-          name || "",
-          phone || "",
-          jobTitle || "",
-          req.user.id,
-        ]
-      );
+      const updated =
+        await query(
+          `
+          UPDATE users
+          SET
+            name = $1,
+            phone = $2,
+            job_title = $3
+          WHERE id = $4
+          RETURNING *
+          `,
+          [
+            name || "",
+            phone || "",
+            jobTitle || "",
+            req.user.id,
+          ]
+        );
 
       if (companyName) {
         await query(
@@ -522,8 +560,23 @@ router.put(
         );
       }
 
+      const user =
+        updated.rows[0];
+
       res.json({
-        success: true,
+        id: user.id,
+        email:
+          user.email,
+        name:
+          user.name,
+        phone:
+          user.phone,
+        role:
+          user.role,
+        companyName:
+          companyName || "",
+        jobTitle:
+          user.job_title,
       });
     } catch (error) {
       res.status(500).json({
