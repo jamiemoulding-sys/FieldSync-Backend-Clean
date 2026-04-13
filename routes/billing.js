@@ -75,7 +75,7 @@ const PLAN_RULES = {
 };
 
 /* ==========================================
-   CHECK STRIPE CONFIG
+   VALIDATE
 ========================================== */
 
 function validateStripeConfig() {
@@ -90,7 +90,7 @@ function validateStripeConfig() {
 }
 
 /* ==========================================
-   CREATE / FIND CUSTOMER
+   CUSTOMER
 ========================================== */
 
 async function getOrCreateCustomer(
@@ -138,7 +138,7 @@ async function getOrCreateCustomer(
 }
 
 /* ==========================================
-   CREATE CHECKOUT SESSION
+   CHECKOUT
 ========================================== */
 
 router.post(
@@ -233,14 +233,13 @@ router.post(
             rules.included
         );
 
-      const lineItems =
-        [
-          {
-            price:
-              rules.basePrice,
-            quantity: 1,
-          },
-        ];
+      const lineItems = [
+        {
+          price:
+            rules.basePrice,
+          quantity: 1,
+        },
+      ];
 
       if (extraStaff > 0) {
         lineItems.push({
@@ -311,9 +310,9 @@ router.post(
       });
     } catch (err) {
       console.error(
-        "CHECKOUT ERROR:"
+        "CHECKOUT ERROR:",
+        err
       );
-      console.error(err);
 
       return res
         .status(500)
@@ -326,7 +325,7 @@ router.post(
 );
 
 /* ==========================================
-   CUSTOMER PORTAL
+   PORTAL
 ========================================== */
 
 router.post(
@@ -351,8 +350,8 @@ router.post(
           LIMIT 1
           `,
           [
-            req.user
-              .companyId,
+            req.user.company_id ||
+              req.user.companyId,
           ]
         );
 
@@ -371,7 +370,6 @@ router.post(
       let customerId =
         company.stripe_customer_id;
 
-      /* AUTO CREATE CUSTOMER IF MISSING */
       if (!customerId) {
         const customer =
           await stripe.customers.create(
@@ -412,9 +410,12 @@ router.post(
               customerId,
 
             return_url:
-              process.env
-                .FRONTEND_URL ||
-              "https://app.zorviatech.co.uk/billing",
+              (
+                process.env
+                  .FRONTEND_URL ||
+                "https://app.zorviatech.co.uk"
+              ) +
+              "/billing",
           }
         );
 
@@ -423,9 +424,9 @@ router.post(
       });
     } catch (err) {
       console.error(
-        "PORTAL ERROR:"
+        "PORTAL ERROR:",
+        err
       );
-      console.error(err);
 
       return res
         .status(500)
@@ -537,9 +538,9 @@ router.post(
       });
     } catch (err) {
       console.error(
-        "WEBHOOK ERROR:"
+        "WEBHOOK ERROR:",
+        err
       );
-      console.error(err);
 
       return res
         .status(400)

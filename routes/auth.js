@@ -47,10 +47,6 @@ function createToken(user) {
       phone:
         user.phone || "",
 
-      companyName:
-        user.company_name ||
-        "",
-
       jobTitle:
         user.job_title ||
         "",
@@ -142,7 +138,6 @@ router.post(
           });
       }
 
-      /* UPDATE LAST SIGN IN */
       await query(
         `
         UPDATE users
@@ -164,39 +159,28 @@ router.post(
           id: user.id,
           email:
             user.email,
-
           name:
             user.name || "",
-
           phone:
             user.phone || "",
-
           role:
             user.role ||
             "employee",
-
           companyId:
             user.company_id,
-
           companyName:
             user.company_name,
-
           jobTitle:
             user.job_title ||
             "",
-
           isPro:
             user.is_pro,
-
           is_pro:
             user.is_pro,
-
           current_plan:
             user.current_plan,
-
           subscription_status:
             user.subscription_status,
-
           last_sign_in:
             user.last_sign_in,
         },
@@ -322,9 +306,6 @@ router.post(
       const user =
         userRes.rows[0];
 
-      user.company_name =
-        company.name;
-
       user.is_pro = false;
       user.current_plan =
         "free";
@@ -340,30 +321,21 @@ router.post(
           id: user.id,
           email:
             user.email,
-
           name:
             user.name,
-
           phone:
             user.phone || "",
-
           role: "admin",
-
           companyId:
             company.id,
-
           companyName:
             company.name,
-
           isPro: false,
           is_pro: false,
-
           current_plan:
             "free",
-
           subscription_status:
             "free",
-
           last_sign_in:
             user.last_sign_in,
         },
@@ -378,7 +350,7 @@ router.post(
 );
 
 /* =====================================
-   SET PASSWORD (INVITES)
+   SET PASSWORD
 ===================================== */
 router.post(
   "/set-password",
@@ -389,48 +361,23 @@ router.post(
         password,
       } = req.body;
 
-      if (
-        !email ||
-        !password
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Missing fields",
-          });
-      }
-
       const hashed =
         await bcrypt.hash(
           password,
           10
         );
 
-      const result =
-        await query(
-          `
-          UPDATE users
-          SET password = $1
-          WHERE LOWER(email)=LOWER($2)
-          RETURNING id,email
-          `,
-          [
-            hashed,
-            email,
-          ]
-        );
-
-      if (
-        !result.rows.length
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "User not found",
-          });
-      }
+      await query(
+        `
+        UPDATE users
+        SET password = $1
+        WHERE LOWER(email)=LOWER($2)
+        `,
+        [
+          hashed,
+          email,
+        ]
+      );
 
       res.json({
         success: true,
@@ -458,11 +405,11 @@ router.get(
           SELECT
             u.id,
             u.email,
-            COALESCE(u.name,'') AS name,
-            COALESCE(u.phone,'') AS phone,
-            COALESCE(u.role,'employee') AS role,
+            u.name,
+            u.phone,
+            u.role,
             u.company_id,
-            COALESCE(u.job_title,'') AS job_title,
+            u.job_title,
             u.last_sign_in,
 
             COALESCE(c.name,'') AS company_name,
@@ -480,25 +427,9 @@ router.get(
           [req.user.id]
         );
 
-      if (
-        !result.rows.length
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "User not found",
-          });
-      }
-
-      const user =
-        result.rows[0];
-
-      res.json({
-        ...user,
-        isPro:
-          user.is_pro,
-      });
+      res.json(
+        result.rows[0]
+      );
     } catch (error) {
       res.status(500).json({
         error:
@@ -523,24 +454,22 @@ router.put(
         jobTitle,
       } = req.body;
 
-      const updated =
-        await query(
-          `
-          UPDATE users
-          SET
-            name = $1,
-            phone = $2,
-            job_title = $3
-          WHERE id = $4
-          RETURNING *
-          `,
-          [
-            name || "",
-            phone || "",
-            jobTitle || "",
-            req.user.id,
-          ]
-        );
+      await query(
+        `
+        UPDATE users
+        SET
+          name = $1,
+          phone = $2,
+          job_title = $3
+        WHERE id = $4
+        `,
+        [
+          name || "",
+          phone || "",
+          jobTitle || "",
+          req.user.id,
+        ]
+      );
 
       if (companyName) {
         await query(
@@ -560,23 +489,8 @@ router.put(
         );
       }
 
-      const user =
-        updated.rows[0];
-
       res.json({
-        id: user.id,
-        email:
-          user.email,
-        name:
-          user.name,
-        phone:
-          user.phone,
-        role:
-          user.role,
-        companyName:
-          companyName || "",
-        jobTitle:
-          user.job_title,
+        success: true,
       });
     } catch (error) {
       res.status(500).json({
