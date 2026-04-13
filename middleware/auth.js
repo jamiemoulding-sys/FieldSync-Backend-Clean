@@ -1,8 +1,18 @@
-const jwt = require("jsonwebtoken");
+const { createClient } = require("@supabase/supabase-js");
 const { query } = require("../database/connection");
 
 /* ===================================
+SUPABASE ADMIN CLIENT
+=================================== */
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+/* ===================================
 🔐 FULL FIX AUTH MIDDLEWARE
+(accepts Supabase JWT)
 =================================== */
 
 const authenticateToken = async (
@@ -38,14 +48,29 @@ const authenticateToken = async (
       });
     }
 
-    /* VERIFY TOKEN */
-    const decoded =
-      jwt.verify(
-        token,
-        process.env.JWT_SECRET
+    /* VERIFY SUPABASE TOKEN */
+    const {
+      data,
+      error,
+    } =
+      await supabase.auth.getUser(
+        token
       );
 
-    /* GET LIVE USER */
+    if (
+      error ||
+      !data?.user
+    ) {
+      return res.status(401).json({
+        error:
+          "Unauthorized",
+      });
+    }
+
+    const authUser =
+      data.user;
+
+    /* GET LIVE USER FROM DB */
     const result =
       await query(
         `
@@ -62,7 +87,7 @@ const authenticateToken = async (
         WHERE id = $1
         LIMIT 1
         `,
-        [decoded.id]
+        [authUser.id]
       );
 
     const user =
@@ -107,7 +132,7 @@ const authenticateToken = async (
       }
     }
 
-    /* FULL FIXED USER PAYLOAD */
+    /* USER PAYLOAD */
     req.user = {
       id: user.id,
       email: user.email,
@@ -131,19 +156,7 @@ const authenticateToken = async (
       err.message
     );
 
-    if (
-      err.name ===
-        "TokenExpiredError" ||
-      err.name ===
-        "JsonWebTokenError"
-    ) {
-      return res.status(401).json({
-        error:
-          "Session expired",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(401).json({
       error:
         "Authentication failed",
     });
