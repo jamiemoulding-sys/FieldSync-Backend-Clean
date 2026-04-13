@@ -1,54 +1,72 @@
 const jwt = require("jsonwebtoken");
 const { query } = require("../database/connection");
 
-//
-// ===================================
-// 🔐 FULL FIX AUTH MIDDLEWARE
-// ===================================
+/* ===================================
+🔐 FULL FIX AUTH MIDDLEWARE
+=================================== */
 
-const authenticateToken = async (req, res, next) => {
+const authenticateToken = async (
+  req,
+  res,
+  next
+) => {
   try {
-    const authHeader = req.headers.authorization;
+    const authHeader =
+      req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (
+      !authHeader ||
+      !authHeader.startsWith(
+        "Bearer "
+      )
+    ) {
       return res.status(401).json({
         error: "No token provided",
       });
     }
 
-    const token = authHeader.split(" ")[1];
+    const token =
+      authHeader.split(" ")[1];
 
-    if (!token || token === "undefined" || token === "null") {
+    if (
+      !token ||
+      token === "undefined" ||
+      token === "null"
+    ) {
       return res.status(401).json({
         error: "Invalid token",
       });
     }
 
-    // VERIFY TOKEN
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    /* VERIFY TOKEN */
+    const decoded =
+      jwt.verify(
+        token,
+        process.env.JWT_SECRET
+      );
 
-    // GET LIVE USER DATA
-    const result = await query(
-      `
-      SELECT
-        id,
-        email,
-        name,
-        role,
-        company_id,
-        is_pro,
-        temp_role,
-        temp_role_expires
-      FROM users
-      WHERE id = $1
-      `,
-      [decoded.id]
-    );
+    /* GET LIVE USER */
+    const result =
+      await query(
+        `
+        SELECT
+          id,
+          email,
+          name,
+          role,
+          company_id,
+          is_pro,
+          temp_role,
+          temp_role_expires
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [decoded.id]
+      );
 
-    const user = result.rows[0];
+    const user =
+      result.rows[0];
 
     if (!user) {
       return res.status(401).json({
@@ -56,20 +74,26 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    let finalRole = user.role || "employee";
+    let finalRole =
+      user.role ||
+      "employee";
 
-    // TEMP ROLE SUPPORT
+    /* TEMP ROLE SUPPORT */
     if (
       user.temp_role &&
       user.temp_role_expires
     ) {
-      const now = new Date();
-      const expiry = new Date(
-        user.temp_role_expires
-      );
+      const now =
+        new Date();
+
+      const expiry =
+        new Date(
+          user.temp_role_expires
+        );
 
       if (expiry > now) {
-        finalRole = user.temp_role;
+        finalRole =
+          user.temp_role;
       } else {
         await query(
           `
@@ -83,13 +107,21 @@ const authenticateToken = async (req, res, next) => {
       }
     }
 
+    /* FULL FIXED USER PAYLOAD */
     req.user = {
       id: user.id,
       email: user.email,
       name: user.name,
       role: finalRole,
-      companyId: user.company_id,
-      isPro: user.is_pro || false,
+
+      companyId:
+        user.company_id,
+
+      company_id:
+        user.company_id,
+
+      isPro:
+        user.is_pro || false,
     };
 
     next();
@@ -100,61 +132,78 @@ const authenticateToken = async (req, res, next) => {
     );
 
     if (
-      err.name === "TokenExpiredError" ||
-      err.name === "JsonWebTokenError"
+      err.name ===
+        "TokenExpiredError" ||
+      err.name ===
+        "JsonWebTokenError"
     ) {
       return res.status(401).json({
-        error: "Session expired",
+        error:
+          "Session expired",
       });
     }
 
     return res.status(500).json({
-      error: "Authentication failed",
+      error:
+        "Authentication failed",
     });
   }
 };
 
-//
-// ===================================
-// 👑 ROLE ACCESS
-// ===================================
+/* ===================================
+👑 ROLE ACCESS
+=================================== */
 
-const requireRole = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
-    }
+const requireRole =
+  (...roles) => {
+    return (
+      req,
+      res,
+      next
+    ) => {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({
+            error:
+              "Unauthorized",
+          });
+      }
 
-    const levels = {
-      employee: 1,
-      manager: 2,
-      admin: 3,
+      const levels = {
+        employee: 1,
+        manager: 2,
+        admin: 3,
+      };
+
+      const userLevel =
+        levels[
+          req.user.role
+        ] || 0;
+
+      const allowed =
+        roles.some(
+          (role) =>
+            userLevel >=
+            levels[role]
+        );
+
+      if (!allowed) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "Forbidden",
+          });
+      }
+
+      next();
     };
-
-    const userLevel =
-      levels[req.user.role] || 0;
-
-    const allowed = roles.some(
-      (role) =>
-        userLevel >= levels[role]
-    );
-
-    if (!allowed) {
-      return res.status(403).json({
-        error: "Forbidden",
-      });
-    }
-
-    next();
   };
-};
 
-//
-// ===================================
-// 🏢 COMPANY CHECK
-// ===================================
+/* ===================================
+🏢 COMPANY CHECK
+=================================== */
 
 const requireCompany = (
   req,
@@ -166,7 +215,8 @@ const requireCompany = (
     !req.user.companyId
   ) {
     return res.status(403).json({
-      error: "No company assigned",
+      error:
+        "No company assigned",
     });
   }
 
