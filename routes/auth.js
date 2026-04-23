@@ -59,6 +59,76 @@ function createToken(user) {
 }
 
 /* =====================================
+DELETE ACCOUNT
+MERGE THIS INTO YOUR EXISTING auth.js
+ADD BELOW router.put("/me"...)
+NO OTHER CHANGES
+===================================== */
+
+const {
+  createClient,
+} = require("@supabase/supabase-js");
+
+/* put near top with other imports */
+const admin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+/* =====================================
+DELETE ACCOUNT
+Uses logged in user token
+POST /api/auth/delete-account
+===================================== */
+router.post(
+  "/delete-account",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const userId =
+        req.user.id;
+
+      if (!userId) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "No user found",
+          });
+      }
+
+      const { error } =
+        await admin.auth.admin.deleteUser(
+          userId
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      return res.json({
+        success: true,
+        message:
+          "Account deleted successfully",
+      });
+    } catch (error) {
+      console.error(
+        "Delete account error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            "Delete failed",
+        });
+    }
+  }
+);
+
+/* =====================================
    LOGIN
 ===================================== */
 router.post(
