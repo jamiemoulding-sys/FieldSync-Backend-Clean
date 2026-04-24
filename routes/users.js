@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { query } = require("../database/connection");
+
 const {
   authenticateToken,
   requireRole,
@@ -19,15 +20,7 @@ router.get(
     try {
       const result = await query(
         `
-        SELECT
-          id,
-          name,
-          email,
-          role,
-          company_id,
-          is_pro,
-          phone,
-          job_title
+        SELECT *
         FROM users
         WHERE company_id = $1
         ORDER BY name ASC
@@ -38,8 +31,73 @@ router.get(
       res.json(result.rows);
     } catch (error) {
       console.error("GET USERS ERROR:", error);
+
       res.status(500).json({
         error: "Failed to fetch users",
+      });
+    }
+  }
+);
+
+/* ====================================
+   ✏️ UPDATE USER
+==================================== */
+router.put(
+  "/:id",
+  authenticateToken,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const {
+        name,
+        email,
+        phone,
+        job_title,
+        hourly_rate,
+        department,
+        role,
+      } = req.body;
+
+      const result = await query(
+        `
+        UPDATE users
+        SET
+          name = COALESCE($1, name),
+          email = COALESCE($2, email),
+          phone = COALESCE($3, phone),
+          job_title = COALESCE($4, job_title),
+          hourly_rate = COALESCE($5, hourly_rate),
+          department = COALESCE($6, department),
+          role = COALESCE($7, role)
+        WHERE id = $8
+        AND company_id = $9
+        RETURNING *
+        `,
+        [
+          name,
+          email,
+          phone,
+          job_title,
+          hourly_rate,
+          department,
+          role,
+          req.params.id,
+          req.user.companyId,
+        ]
+      );
+
+      if (!result.rows.length) {
+        return res.status(404).json({
+          error: "User not found",
+        });
+      }
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("UPDATE USER ERROR:", error);
+
+      res.status(500).json({
+        error: "Failed to update user",
       });
     }
   }
@@ -61,14 +119,21 @@ router.put(
         UPDATE users
         SET role = $1
         WHERE id = $2
+        AND company_id = $3
         `,
-        [role, req.params.id]
+        [
+          role,
+          req.params.id,
+          req.user.companyId,
+        ]
       );
 
       res.json({
         success: true,
       });
     } catch (error) {
+      console.error("ROLE UPDATE ERROR:", error);
+
       res.status(500).json({
         error: "Failed to update role",
       });
@@ -89,14 +154,20 @@ router.delete(
         `
         DELETE FROM users
         WHERE id = $1
+        AND company_id = $2
         `,
-        [req.params.id]
+        [
+          req.params.id,
+          req.user.companyId,
+        ]
       );
 
       res.json({
         success: true,
       });
     } catch (error) {
+      console.error("DELETE USER ERROR:", error);
+
       res.status(500).json({
         error: "Failed to delete user",
       });

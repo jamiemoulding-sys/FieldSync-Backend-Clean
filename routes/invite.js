@@ -29,38 +29,66 @@ router.post(
         });
       }
 
+      const cleanEmail = email.trim().toLowerCase();
+
+      const companyId = req.user.companyId;
+
       const baseUrl = (
         process.env.FRONTEND_URL ||
         "https://app.zorviatech.co.uk"
       ).replace(/\/$/, "");
 
+      /* 1. Send invite */
       const { data, error } =
         await supabase.auth.admin.inviteUserByEmail(
-          email,
+          cleanEmail,
           {
             redirectTo: `${baseUrl}/set-password`,
             data: {
               role: role || "employee",
-              company_id: req.user.companyId,
+              company_id: companyId,
             },
           }
         );
 
       if (error) {
-        console.error("SUPABASE INVITE ERROR:", error);
         return res.status(400).json({
           error: error.message,
         });
       }
 
-      return res.status(200).json({
+      const authUser = data.user;
+
+      if (!authUser?.id) {
+        return res.status(500).json({
+          error: "Invite sent but no auth user created",
+        });
+      }
+
+      /* 2. Create users table row NOW */
+      const { error: insertError } =
+        await supabase
+          .from("users")
+          .upsert({
+            id: authUser.id,
+            email: cleanEmail,
+            name: cleanEmail.split("@")[0],
+            role: role || "employee",
+            company_id: companyId,
+          });
+
+      if (insertError) {
+        return res.status(500).json({
+          error: insertError.message,
+        });
+      }
+
+      return res.json({
         success: true,
         message: "Invite sent successfully",
-        data,
       });
-    } catch (err) {
-      console.error("INVITE CRASH:", err);
 
+    } catch (err) {
       return res.status(500).json({
         error: err.message || "Invite failed",
       });

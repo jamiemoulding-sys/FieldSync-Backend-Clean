@@ -1,7 +1,7 @@
 // 🔥 SUPABASE FIX (Headers issue)
-
-require("cross-fetch/polyfill");
 require("dotenv").config();
+require("cross-fetch/polyfill");
+
 
 const express = require("express");
 const cors = require("cors");
