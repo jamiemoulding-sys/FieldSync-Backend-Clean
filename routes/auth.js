@@ -424,102 +424,17 @@ router.post(
 ===================================== */
 router.post("/set-password", async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        error: "Missing fields",
-      });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    const existing = await query(
-      `
-      SELECT id
-      FROM users
-      WHERE LOWER(email)=LOWER($1)
-      LIMIT 1
-      `,
-      [email]
-    );
-
-    /* already exists */
-    if (existing.rows.length) {
-      await query(
-        `
-        UPDATE users
-        SET password = $1
-        WHERE LOWER(email)=LOWER($2)
-        `,
-        [hashed, email]
-      );
-
-      return res.json({ success: true });
-    }
-
-    /* pull user from Supabase */
-    const { data: authUsers } =
-      await admin.auth.admin.listUsers();
-
-    const authUser =
-      authUsers.users.find(
-        (u) =>
-          u.email.toLowerCase() ===
-          email.toLowerCase()
-      );
-
-    if (!authUser) {
-      return res.status(404).json({
-        error: "User not found",
-      });
-    }
-
-    const companyId =
-      authUser.user_metadata
-        ?.company_id || null;
-
-    const role =
-      authUser.user_metadata
-        ?.role || "employee";
-
-    await query(
-      `
-      INSERT INTO users
-      (
-        id,
-        email,
-        password,
-        name,
-        role,
-        company_id,
-        phone,
-        job_title
-      )
-      VALUES
-      ($1,$2,$3,$4,$5,$6,'','')
-      `,
-      [
-        authUser.id,
-        email,
-        hashed,
-        "Employee",
-        role,
-        companyId,
-      ]
-    );
-
-    res.json({
+    return res.json({
       success: true,
     });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      error: error.message,
+  } catch (err) {
+    res.status(400).json({
+      error: err.message,
     });
   }
 });
+
+
 
 /* =====================================
    GET PROFILE
