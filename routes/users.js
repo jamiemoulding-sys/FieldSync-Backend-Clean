@@ -49,42 +49,57 @@ router.put(
   async (req, res) => {
     try {
       const {
-        name,
-        email,
-        phone,
-        job_title,
-        hourly_rate,
-        department,
-        role,
-      } = req.body;
+  name,
+  email,
+  phone,
+  job_title,
+  hourly_rate,
+  overtime_rate,
+  night_rate,
+  contracted_hours,
+  holiday_allowance,
+  department,
+  role,
+  start_date,
+} = req.body;
 
-      const result = await query(
-        `
-        UPDATE users
-        SET
-          name = COALESCE($1, name),
-          email = COALESCE($2, email),
-          phone = COALESCE($3, phone),
-          job_title = COALESCE($4, job_title),
-          hourly_rate = COALESCE($5, hourly_rate),
-          department = COALESCE($6, department),
-          role = COALESCE($7, role)
-        WHERE id = $8
-        AND company_id = $9
-        RETURNING *
-        `,
-        [
-          name,
-          email,
-          phone,
-          job_title,
-          hourly_rate,
-          department,
-          role,
-          req.params.id,
-          req.user.companyId,
-        ]
-      );
+const result = await query(
+  `
+  UPDATE users
+  SET
+    name = COALESCE($1, name),
+    email = COALESCE($2, email),
+    phone = COALESCE($3, phone),
+    job_title = COALESCE($4, job_title),
+    hourly_rate = COALESCE($5, hourly_rate),
+    overtime_rate = COALESCE($6, overtime_rate),
+    night_rate = COALESCE($7, night_rate),
+    contracted_hours = COALESCE($8, contracted_hours),
+    holiday_allowance = COALESCE($9, holiday_allowance),
+    department = COALESCE($10, department),
+    role = COALESCE($11, role),
+    start_date = COALESCE($12, start_date)
+  WHERE id = $13
+  AND company_id = $14
+  RETURNING *
+  `,
+  [
+    name,
+    email,
+    phone,
+    job_title,
+    hourly_rate,
+    overtime_rate,
+    night_rate,
+    contracted_hours,
+    holiday_allowance,
+    department,
+    role,
+    start_date,
+    req.params.id,
+    req.user.companyId,
+  ]
+);
 
       if (!result.rows.length) {
         return res.status(404).json({
