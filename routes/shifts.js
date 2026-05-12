@@ -5,7 +5,9 @@ const { authenticateToken } = require('../middleware/auth');
 const { getDistanceInMeters } = require('../utils/distance');
 const { 
   clockInRequestSchema,
-  clockOutRequestSchema 
+  clockOutRequestSchema,
+  breakStartRequestSchema,
+  breakEndRequestSchema
 } = require('@fieldsync/shared');
 
 function pickClockInPayload(body) {
@@ -25,6 +27,13 @@ function clockInValidationFailed(res, zodError) {
 }
 
 function clockOutValidationFailed(res, zodError) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: zodError.issues
+  });
+}
+
+function breakValidationFailed(res, zodError) {
   return res.status(400).json({
     error: 'Validation failed',
     issues: zodError.issues
@@ -221,6 +230,153 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
     console.error('CLOCK OUT ERROR:', err);
     return res.status(500).json({
       error: 'Clock out failed'
+    });
+  }
+});
+
+//
+// =======================
+// ⏸️ START BREAK
+// =======================
+router.post('/break/start', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.user.companyId;
+
+    const parsed = breakStartRequestSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return breakValidationFailed(res, parsed.error);
+    }
+
+    const { shift_id, reason, location } = parsed.data;
+
+    // 🔹 Validate active shift
+    const shiftRes = await query(`
+      SELECT * FROM shifts
+      WHERE id = $1
+      AND user_id = $2
+      AND company_id = $3
+      AND clock_out_time IS NULL
+    `, [shift_id, userId, companyId]);
+
+    const activeShift = shiftRes.rows[0];
+    if (!activeShift) {
+      return res.status(404).json({ error: 'Active shift not found' });
+    }
+
+    // 🔹 Prevent duplicate breaks
+    if (activeShift.break_started_at) {
+      return res.status(403).json({ error: 'Break already in progress' });
+    }
+
+    // 🔹 Start break
+    const result = await query(`
+      UPDATE shifts
+      SET break_started_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `, [shift_id]);
+
+    // 🔥 LOG ACTIVITY
+    await logActivity(userId, companyId, 'break_start', {
+      shift_id,
+    });
+
+    return res.status(201).json({
+      success: true,
+      break: {
+        id: result.rows[0].id,
+        shift_id: result.rows[0].id,
+        break_started_at: result.rows[0].break_started_at,
+      }
+    });
+
+  } catch (error) {
+    console.error('BREAK START ERROR:', error);
+    return res.status(500).json({
+      error: 'Break start failed'
+    });
+  }
+});
+
+//
+// =======================
+// ▶️ END BREAK
+// =======================
+router.post('/break/end', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.user.companyId;
+
+    const parsed = breakEndRequestSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return breakValidationFailed(res, parsed.error);
+    }
+
+    const { shift_id } = parsed.data;
+
+    // 🔹 Validate active shift
+    const shiftRes = await query(`
+      SELECT * FROM shifts
+      WHERE id = $1
+      AND user_id = $2
+      AND company_id = $3
+      AND clock_out_time IS NULL
+    `, [shift_id, userId, companyId]);
+
+    const activeShift = shiftRes.rows[0];
+    if (!activeShift) {
+      return res.status(404).json({ error: 'Active shift not found' });
+    }
+
+    // 🔹 Validate active break
+    if (!activeShift.break_started_at) {
+      return res.status(404).json({ error: 'No active break found' });
+    }
+
+    // 🔹 Calculate break duration
+    const breakDuration = await query(`
+      SELECT EXTRACT(EPOCH FROM (NOW() - break_started_at)) as seconds
+      FROM shifts
+      WHERE id = $1
+    `, [shift_id]);
+
+    const breakSeconds = Math.floor(breakDuration.rows[0].seconds);
+    const totalBreakSeconds = (activeShift.total_break_seconds || 0) + breakSeconds;
+
+    // 🔹 End break
+    const result = await query(`
+      UPDATE shifts
+      SET 
+        break_started_at = NULL,
+        total_break_seconds = $1
+      WHERE id = $2
+      RETURNING *
+    `, [totalBreakSeconds, shift_id]);
+
+    // 🔥 LOG ACTIVITY
+    await logActivity(userId, companyId, 'break_end', {
+      shift_id,
+      break_duration_seconds: breakSeconds,
+      total_break_seconds: totalBreakSeconds
+    });
+
+    return res.json({
+      success: true,
+      break: {
+        id: result.rows[0].id,
+        shift_id: result.rows[0].id,
+        break_started_at: result.rows[0].break_started_at,
+        total_break_seconds: totalBreakSeconds
+      }
+    });
+
+  } catch (error) {
+    console.error('BREAK END ERROR:', error);
+    return res.status(500).json({
+      error: 'Break end failed'
     });
   }
 });
