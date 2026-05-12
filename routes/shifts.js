@@ -258,7 +258,8 @@ router.post('/break/start', authenticateToken, async (req, res) => {
       AND user_id = $2
       AND company_id = $3
       AND clock_out_time IS NULL
-    `, [shift_id, userId, companyId]);
+FOR UPDATE
+`, [shift_id, userId, companyId]);
 
     const activeShift = shiftRes.rows[0];
     if (!activeShift) {
@@ -324,7 +325,8 @@ router.post('/break/end', authenticateToken, async (req, res) => {
       AND user_id = $2
       AND company_id = $3
       AND clock_out_time IS NULL
-    `, [shift_id, userId, companyId]);
+FOR UPDATE
+`, [shift_id, userId, companyId]);
 
     const activeShift = shiftRes.rows[0];
     if (!activeShift) {
