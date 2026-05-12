@@ -3,6 +3,33 @@ const router = express.Router();
 const { query } = require('../database/connection');
 const { authenticateToken } = require('../middleware/auth');
 const { getDistanceInMeters } = require('../utils/distance');
+const { 
+  clockInRequestSchema,
+  clockOutRequestSchema 
+} = require('@fieldsync/shared');
+
+function pickClockInPayload(body) {
+  const keys = ['location_id', 'latitude', 'longitude', 'shift_type', 'verified'];
+  const picked = {};
+  for (const k of keys) {
+    if (body[k] !== undefined) picked[k] = body[k];
+  }
+  return picked;
+}
+
+function clockInValidationFailed(res, zodError) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: zodError.issues
+  });
+}
+
+function clockOutValidationFailed(res, zodError) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: zodError.issues
+  });
+}
 
 //
 // =======================
@@ -27,11 +54,20 @@ router.post('/clock-in', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.user.companyId;
-    const { location_id, latitude, longitude } = req.body;
 
     if (!companyId) {
       return res.status(403).json({ error: "No company assigned" });
     }
+
+    const parsed = clockInRequestSchema.safeParse(
+      pickClockInPayload(req.body)
+    );
+
+    if (!parsed.success) {
+      return clockInValidationFailed(res, parsed.error);
+    }
+
+    const { location_id, latitude, longitude } = parsed.data;
 
     // 🔹 Validate location
     const locationRes = await query(
@@ -132,14 +168,42 @@ router.post('/clock-out', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const companyId = req.user.companyId;
 
-    const result = await query(`
+    // Validate optional GPS coordinates
+    const parsed = clockOutRequestSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return clockOutValidationFailed(res, parsed.error);
+    }
+
+    const { clock_out_lat, clock_out_lng } = parsed.data;
+
+    // Build update query with optional GPS fields
+    let updateQuery = `
       UPDATE shifts
       SET clock_out_time = NOW()
+    `;
+    
+    const queryParams = [userId, companyId];
+    let paramIndex = 3;
+
+    // Add GPS coordinates if provided
+    if (clock_out_lat !== undefined && clock_out_lng !== undefined) {
+      updateQuery += `,
+        clock_out_lat = $${paramIndex},
+        clock_out_lng = $${paramIndex + 1}
+      `;
+      queryParams.push(clock_out_lat, clock_out_lng);
+      paramIndex += 2;
+    }
+
+    updateQuery += `
       WHERE user_id = $1
       AND company_id = $2
       AND clock_out_time IS NULL
       RETURNING *
-    `, [userId, companyId]);
+    `;
+
+    const result = await query(updateQuery, queryParams);
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'No active shift found' });

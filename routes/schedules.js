@@ -8,6 +8,42 @@ const {
 } = require('../middleware/auth');
 
 const { query } = require('../database/connection');
+const { 
+  scheduleCreationSchema,
+  leaveRequestCreateSchema 
+} = require('@fieldsync/shared');
+
+function pickScheduleCreatePayload(body) {
+  const allowed = [
+    'user_id',
+    'date',
+    'start_time',
+    'end_time',
+    'company_id',
+    'location_id'
+  ];
+  const picked = {};
+  for (const key of allowed) {
+    if (body[key] !== undefined) picked[key] = body[key];
+  }
+  return picked;
+}
+
+function validationFailed(res, zodError, bulkIndex = null) {
+  const payload = {
+    error: 'Validation failed',
+    issues: zodError.issues
+  };
+  if (bulkIndex !== null) payload.bulkIndex = bulkIndex;
+  return res.status(400).json(payload);
+}
+
+function leaveValidationFailed(res, zodError) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: zodError.issues
+  });
+}
 
 //
 // =======================
@@ -70,11 +106,15 @@ router.post('/',
   requireRole('admin', 'manager'),
   async (req, res) => {
     try {
-      const { user_id, date, start_time, end_time } = req.body;
+      const parsed = scheduleCreationSchema.safeParse(
+        pickScheduleCreatePayload(req.body)
+      );
 
-      if (!user_id || !date || !start_time || !end_time) {
-        return res.status(400).json({ error: "All fields required" });
+      if (!parsed.success) {
+        return validationFailed(res, parsed.error);
       }
+
+      const { user_id, date, start_time, end_time } = parsed.data;
 
       // 🔒 validate user belongs to company
       const userCheck = await query(
@@ -147,11 +187,21 @@ router.post('/bulk',
 
       const created = [];
 
-      for (const s of shifts) {
-        const { user_id, date, start_time, end_time } = s;
+      for (let i = 0; i < shifts.length; i++) {
+        const s = shifts[i];
 
-        // skip invalid
-        if (!user_id || !date) continue;
+        // skip invalid (preserves prior silent-skip behavior)
+        if (!s.user_id || !s.date) continue;
+
+        const parsed = scheduleCreationSchema.safeParse(
+          pickScheduleCreatePayload(s)
+        );
+
+        if (!parsed.success) {
+          return validationFailed(res, parsed.error, i);
+        }
+
+        const { user_id, date, start_time, end_time } = parsed.data;
 
         // prevent duplicates
         const exists = await query(
@@ -304,18 +354,23 @@ router.post('/holiday-requests',
   requireCompany,
   async (req, res) => {
     try {
-      const { start_date, end_date } = req.body;
+      const parsed = leaveRequestCreateSchema.safeParse(req.body);
 
-      if (!start_date || !end_date) {
-        return res.status(400).json({ error: "Dates required" });
+      if (!parsed.success) {
+        return leaveValidationFailed(res, parsed.error);
       }
+
+      const { start_date, end_date, user_id } = parsed.data;
+
+      // Use authenticated user's ID unless admin specifies override
+      const targetUserId = user_id || req.user.id;
 
       const result = await query(`
         INSERT INTO holidays 
         (user_id, start_date, end_date, status, company_id)
         VALUES ($1, $2, $3, 'pending', $4)
         RETURNING *
-      `, [req.user.id, start_date, end_date, req.user.companyId]);
+      `, [targetUserId, start_date, end_date, req.user.companyId]);
 
       res.status(201).json(result.rows[0]);
 

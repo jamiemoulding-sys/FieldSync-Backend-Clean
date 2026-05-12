@@ -8,6 +8,15 @@ const {
   requireRole
 } = require('../middleware/auth');
 
+const { locationCreationSchema } = require('@fieldsync/shared');
+
+function validationFailed(res, zodError) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: zodError.issues
+  });
+}
+
 //
 // =======================
 // 📍 GET ALL
@@ -44,13 +53,13 @@ router.post('/',
   requireRole('manager', 'admin'),
   async (req, res) => {
     try {
-      const { name, address, latitude, longitude, radius } = req.body;
+      const parsed = locationCreationSchema.safeParse(req.body);
 
-      if (!name || latitude == null || longitude == null) {
-        return res.status(400).json({
-          error: 'Name, latitude and longitude are required'
-        });
+      if (!parsed.success) {
+        return validationFailed(res, parsed.error);
       }
+
+      const { name, address, latitude, longitude, radius } = parsed.data;
 
       const result = await query(
         `INSERT INTO locations 
@@ -97,7 +106,13 @@ router.put('/:id',
   requireRole('manager', 'admin'),
   async (req, res) => {
     try {
-      const { name, address, latitude, longitude, radius } = req.body;
+      const parsed = locationCreationSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return validationFailed(res, parsed.error);
+      }
+
+      const { name, address, latitude, longitude, radius } = parsed.data;
 
       const result = await query(
         `UPDATE locations
